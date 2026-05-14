@@ -826,9 +826,18 @@ function backendToApp(r) {
 }
 
 async function loadLiveData(force) {
-  if (!authToken) { setDataSource('mock'); return; }
   try {
-    const data = await apiFetch('/api/applications?limit=30');
+    const headers = authToken ? {'Authorization': 'Bearer ' + authToken} : {};
+    const r = await fetch(API_BASE + '/api/applications?limit=30', { headers });
+    if (r.status === 401) {
+      authToken = ''; authEmail = '';
+      localStorage.removeItem('mo-token');
+      localStorage.removeItem('mo-email');
+      updateAuthUI();
+      setDataSource('mock'); return;
+    }
+    if (!r.ok) throw new Error('api-error ' + r.status);
+    const data = await r.json();
     if (data && Array.isArray(data.rows) && data.rows.length > 0) {
       APPS = data.rows.map(backendToApp);
       // 담당자 dropdown 옵션 갱신
@@ -1267,7 +1276,7 @@ function deriveInsights() {
 // ====== INIT ======
 render();
 updateAuthUI();
-if (authToken) loadLiveData();
+loadLiveData();
 </script>
 </body>
 </html>
