@@ -46,12 +46,12 @@ uvicorn src.main:app --reload --port 8080
 ```bash
 # 1) 컨테이너 빌드 (backend 디렉토리에서)
 gcloud builds submit \
-  --tag asia-northeast3-docker.pkg.dev/platform-jaranda-kr-standby/jaranda/matching-ops-api:latest \
+  --tag asia-northeast3-docker.pkg.dev/platform-jaranda-kr-standby/cloud-run-source-deploy/matching-ops-api:latest \
   --project platform-jaranda-kr-standby
 
 # 2) 배포 (vibe-cs-connector 재사용)
 gcloud run deploy matching-ops-api \
-  --image asia-northeast3-docker.pkg.dev/platform-jaranda-kr-standby/jaranda/matching-ops-api:latest \
+  --image asia-northeast3-docker.pkg.dev/platform-jaranda-kr-standby/cloud-run-source-deploy/matching-ops-api:latest \
   --region asia-northeast3 \
   --project platform-jaranda-kr-standby \
   --vpc-connector vibe-cs-connector \
