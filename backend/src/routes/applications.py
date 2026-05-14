@@ -104,6 +104,53 @@ def _request_chips(rec: dict[str, Any]) -> list[str]:
     return chips
 
 
+def _compute_prob(
+    confirmed: Any,
+    cancelled: Any,
+    applied_count: int,
+    requested_count: int,
+    is_new: bool,
+    timer_min: int | None,
+    is_urgent: bool,
+) -> int:
+    """LLM 예측 부재 시 휴리스틱 매칭 확률. 0~100.
+
+    base 30 + 지원 응답률(최대 +45) + 재이용(+10) + 지명·요청 모수(최대 +5)
+    + 마감 여유/임박(±15) + 긴급(-10).
+    confirmed 존재 시 100, cancelled 시 0.
+    """
+    if _is_real_ts(confirmed):
+        return 100
+    if _is_real_ts(cancelled):
+        return 0
+
+    score = 30
+    if applied_count >= 1:
+        score += 25
+    if applied_count >= 2:
+        score += 12
+    if applied_count >= 3:
+        score += 8
+    if requested_count >= 3:
+        score += 5
+
+    if not is_new:
+        score += 10
+
+    if timer_min is not None:
+        if timer_min < 4 * 60:
+            score -= 15
+        elif timer_min < 24 * 60:
+            score -= 5
+        elif timer_min > 48 * 60:
+            score += 5
+
+    if is_urgent:
+        score -= 10
+
+    return max(5, min(100, score))
+
+
 def _to_row(rec: dict[str, Any]) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
@@ -172,7 +219,14 @@ def _to_row(rec: dict[str, Any]) -> dict[str, Any]:
         "reqCount": int(rec.get("requested_count") or 0),
         "applyCount": int(rec.get("applied_count") or 0),
         "confirmed": confirmed.strftime("%H:%M") if _is_real_ts(confirmed) else "—",
-        "prob": None,  # LLM 예측 — 후속 작업
+        "prob": _compute_prob(
+            confirmed, cancelled,
+            int(rec.get("applied_count") or 0),
+            int(rec.get("requested_count") or 0),
+            bool(rec.get("new_parent")),
+            timer,
+            bool(rec.get("is_urgent")),
+        ),
         "result": result,
         "resultType": result_type,
         "isNew": bool(rec.get("new_parent")) if rec.get("new_parent") is not None else None,
