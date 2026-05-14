@@ -196,17 +196,29 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* DETAIL 4-CARDS */
 .detail-4-cards {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;
+}
+@media (max-width: 1100px) {
+  .detail-4-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .dcard {
   background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 14px;
+  border-radius: var(--radius-lg); padding: 12px;
+  min-width: 0;
 }
 .dcard-title {
   font-size: 11px; font-weight: 600; color: var(--text2);
   letter-spacing: .06em; text-transform: uppercase;
   margin-bottom: 10px;
 }
+
+/* Timeline sub event (부모님 앱 로그인 등) */
+.tl-item.sub { padding-left: 22px; padding-bottom: 8px; }
+.tl-item.sub .tl-dot { width: 6px; height: 6px; margin-top: 4px; opacity: .7; }
+.tl-item.sub .tl-line { background: var(--border2); opacity: .6; }
+.tl-item.sub .tl-action { font-size: 11px; color: var(--text2); font-weight: 400; }
+.tl-item.sub .tl-time { font-size: 10px; }
+.tl-item.sub .tl-detail { font-size: 10px; color: var(--text3); }
 
 /* TEACHER DETAIL CARD */
 .teacher-cards-grid {
@@ -948,8 +960,10 @@ function buildDetailHTML(d) {
     t.stat.includes('수락') || t.stat.includes('응답완료')
   );
 
-  const timelineHTML = d.timeline.map((t,i) => `
-    <div class="tl-item">
+  const timelineHTML = d.timeline.map((t,i) => {
+    const isSub = t.action.includes('부모님앱 로그인');
+    return `
+    <div class="tl-item${isSub?' sub':''}">
       <div class="tl-dot-col">
         <div class="tl-dot" style="background:${t.dot}"></div>
         ${i < d.timeline.length-1 ? '<div class="tl-line"></div>' : ''}
@@ -960,7 +974,7 @@ function buildDetailHTML(d) {
         ${t.detail ? `<div class="tl-detail">${t.detail}</div>` : ''}
       </div>
     </div>
-  `).join('');
+  `;}).join('');
 
   const teacherCardsHTML = responded.length === 0
     ? '<div class="no-teacher">지원·수락한 선생님이 아직 없습니다.</div>'
