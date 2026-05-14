@@ -512,7 +512,6 @@ input, textarea, select { font-family: inherit; }
       </nav>
     </div>
     <div class="topbar-right">
-      <span class="data-source-pill" id="data-source-pill">mock</span>
       <div id="g-signin-slot"></div>
       <span class="auth-email" id="auth-email" style="display:none"></span>
       <button class="btn btn-secondary btn-sm" id="logout-btn" onclick="logout()" style="display:none">로그아웃</button>
@@ -521,7 +520,7 @@ input, textarea, select { font-family: inherit; }
         <input id="search-input" placeholder="신청서·고객명 검색" oninput="onSearch(this.value)">
       </div>
       <button class="btn btn-secondary" onclick="loadLiveData(true)"><span class="icon">↻</span>새로고침</button>
-      <button class="btn btn-primary" onclick="alert('신규 신청서 등록 화면 (구현 예정)')"><span class="icon">＋</span>신규 신청서</button>
+      <button class="btn btn-primary" disabled title="준비 중"><span class="icon">＋</span>신규 신청서</button>
       <div class="avatar" id="user-avatar">박</div>
     </div>
   </header>
@@ -554,7 +553,7 @@ input, textarea, select { font-family: inherit; }
           <button class="seg-btn" data-layout="table" onclick="setLayout('table')"><span class="icon">≡</span>테이블</button>
           <button class="seg-btn" data-layout="kanban" onclick="setLayout('kanban')"><span class="icon">▦</span>칸반</button>
         </div>
-        <button class="btn btn-secondary" onclick="alert('내보내기 (구현 예정)')"><span class="icon">⤓</span>내보내기</button>
+        <button class="btn btn-secondary" disabled title="준비 중"><span class="icon">⤓</span>내보내기</button>
       </div>
     </div>
 
@@ -628,81 +627,8 @@ const TONE_FG = {
   amber: '#8A5B00', red: '#A4271A', purple: '#4634A8', slate: '#4B5563',
 };
 
-// ====== MOCK DATA (핸드오프 APPLICATIONS 스키마) ======
-let APPS = [
-  {
-    id: 'SID-2418', parent: '김민서', parentTag: '신규', child: '지우', childAge: '초2',
-    region: '서울 마포구', subject: '수학', schedule: '주 2회 · 화/목 17:00',
-    receivedAt: '5/13 09:21', deadline: '오늘 18:00', deadlineState: 'urgent',
-    probability: 78, owner: '신진섭', status: '추천중', statusKey: 'recommending',
-    lastAction: '선생님 1 응답 대기 · 14분 전',
-    recommendation: {
-      stateKey: 'waiting',
-      t1: { name: '이수민 선생님', stateKey: 'accepted', note: '오후 5시 가능', viewed: true,  viewedAt: '5/13 13:42' },
-      t2: { name: '정유진 선생님', stateKey: 'pending',  note: '3시간 경과',  viewed: false, viewedAt: null },
-    },
-    history: { rebook: false, prevTeachers: 0, notes: '첫 매칭' },
-    extras: ['방문 수업', '여자 선생님 선호'], result: null,
-  },
-  {
-    id: 'SID-2419', parent: '장하늘', parentTag: '재이용', child: '서윤', childAge: '초4',
-    region: '서울 강서구', subject: '영어', schedule: '주 3회 · 월/수/금 16:30',
-    receivedAt: '5/13 10:02', deadline: '내일 12:00', deadlineState: 'soon',
-    probability: 91, owner: '김지윤', status: '매칭 완료', statusKey: 'matched',
-    lastAction: '선생님 1 수락 · 1시간 전',
-    recommendation: {
-      stateKey: 'accepted',
-      t1: { name: '한지호 선생님', stateKey: 'accepted', note: '이전 매칭 동일', viewed: true, viewedAt: '5/13 11:08' },
-      t2: { name: '최서아 선생님', stateKey: 'backup',   note: '대기 풀',       viewed: true, viewedAt: '5/13 11:09' },
-    },
-    history: { rebook: true, prevTeachers: 1, notes: '재이용 2회차' },
-    extras: ['기존 선생님 연장'], result: '성공',
-  },
-  {
-    id: 'SID-2420', parent: '윤서진', parentTag: '신규', child: '도윤', childAge: '초1',
-    region: '경기 성남시', subject: '독서·논술', schedule: '주 1회 · 토 10:00',
-    receivedAt: '5/12 18:44', deadline: '오늘 22:00', deadlineState: 'urgent',
-    probability: 42, owner: '노태효', status: '선생님 미정', statusKey: 'searching',
-    lastAction: '추천 후보 재탐색 · 30분 전',
-    recommendation: {
-      stateKey: 'searching',
-      t1: { name: '—', stateKey: 'declined', note: '스케줄 불가', viewed: false, viewedAt: null },
-      t2: { name: '—', stateKey: 'declined', note: '지역 불가',   viewed: false, viewedAt: null },
-    },
-    history: { rebook: false, prevTeachers: 0, notes: '응답 속도 느림' },
-    extras: ['주말 한정'], result: null,
-  },
-  {
-    id: 'SID-2421', parent: '송예린', parentTag: '재이용', child: '하준', childAge: '초3',
-    region: '서울 송파구', subject: '과학실험', schedule: '격주 · 일 14:00',
-    receivedAt: '5/12 11:10', deadline: '5/15 09:00', deadlineState: 'ok',
-    probability: 65, owner: '김성환', status: '추천중', statusKey: 'recommending',
-    lastAction: '선생님 2 수락 · 2시간 전',
-    recommendation: {
-      stateKey: 'accepted',
-      t1: { name: '오민재 선생님', stateKey: 'pending',  note: '확인 요청',  viewed: true,  viewedAt: '5/12 19:30' },
-      t2: { name: '신해린 선생님', stateKey: 'accepted', note: '전과목 가능', viewed: false, viewedAt: null },
-    },
-    history: { rebook: true, prevTeachers: 2, notes: '재이용 3회차' },
-    extras: ['남자 선생님 선호'], result: null,
-  },
-  {
-    id: 'SID-2422', parent: '노가람', parentTag: '신규', child: '라온', childAge: '유아7세',
-    region: '인천 연수구', subject: '한글·놀이', schedule: '주 2회 · 월/수 10:30',
-    receivedAt: '5/11 15:33', deadline: '5/16 18:00', deadlineState: 'ok',
-    probability: 58, owner: '이승석', status: '부모님 확인', statusKey: 'review',
-    lastAction: '추천서 전달 · 4시간 전',
-    recommendation: {
-      stateKey: 'review',
-      t1: { name: '권하영 선생님', stateKey: 'accepted', note: '유아 전문', viewed: true, viewedAt: '5/12 16:48' },
-      t2: { name: '배도현 선생님', stateKey: 'accepted', note: '근거리',   viewed: true, viewedAt: '5/12 17:02' },
-    },
-    history: { rebook: false, prevTeachers: 0, notes: '응답 빠름' },
-    extras: ['놀이형 수업'], result: null,
-  },
-];
-
-const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','강구슬'];
+// ====== APPLICATIONS (replica 라이브 데이터로 채워짐) ======
+let APPS = [];
 
 // ====== STATE ======
 let state = {
@@ -718,11 +644,7 @@ let state = {
 let authToken = localStorage.getItem('mo-token') || '';
 let authEmail = localStorage.getItem('mo-email') || '';
 
-function setDataSource(src) {
-  const pill = document.getElementById('data-source-pill');
-  pill.textContent = src;
-  pill.classList.toggle('live', src === 'live');
-}
+function setDataSource(_src) { /* removed: data source pill 제거 */ }
 
 function showGate(err) {
   document.getElementById('login-gate').style.display = '';
@@ -873,7 +795,10 @@ function backendToApp(r) {
     receivedAt: r.date || '',
     deadline: r.deadlineLabel || '—',
     deadlineState: r.deadlineState || 'ok',
-    probability: r.prob != null ? r.prob : 0,
+    probability: typeof r.prob === 'object' && r.prob !== null
+      ? (r.prob.value != null ? r.prob.value : 0)
+      : (r.prob != null ? r.prob : 0),
+    probabilitySource: (typeof r.prob === 'object' && r.prob !== null) ? r.prob.source : 'heuristic',
     owner: r.assignee || '—',
     status: r.status || '', statusKey,
     lastAction: '—',
@@ -907,21 +832,16 @@ async function loadLiveData(force) {
     }
     if (!r.ok) throw new Error('api-error ' + r.status);
     const data = await r.json();
-    if (data && Array.isArray(data.rows) && data.rows.length > 0) {
-      APPS = data.rows.map(backendToApp);
-      // 담당자 dropdown 옵션 갱신
-      const owners = Array.from(new Set(APPS.map(a => a.owner).filter(Boolean)));
-      state.ownerOptions = owners;
-      // 첫 항목 선택
-      state.selectedId = APPS[0]?.id || null;
-      setDataSource('live');
-      render();
-    } else {
-      setDataSource('mock');
-    }
+    APPS = (data && Array.isArray(data.rows)) ? data.rows.map(backendToApp) : [];
+    const owners = Array.from(new Set(APPS.map(a => a.owner).filter(Boolean)));
+    state.ownerOptions = owners;
+    state.selectedId = APPS[0]?.id || null;
+    render();
   } catch (e) {
-    console.warn('Live data fetch failed, mock fallback:', e.message);
-    setDataSource('mock');
+    console.error('Live data fetch failed:', e.message);
+    APPS = [];
+    state.selectedId = null;
+    render();
   }
 }
 
@@ -948,11 +868,15 @@ function dlTag(deadline, stateKey) {
   return `<span class="dl-tag ${cls}"><span class="icon">⏱</span>${deadline}</span>`;
 }
 
-function probBar(value, compact) {
+function probBar(value, compact, source) {
   const tone = value >= 75 ? '#1F6B3C' : value >= 55 ? '#1B4FB8' : '#B43F18';
+  const isHeuristic = source !== 'actual';
+  const hint = isHeuristic
+    ? `<span class="prob-source" title="LLM 예측 미구현 — 휴리스틱 추정값" style="font-size:10px;color:#9CA3AF;margin-left:4px">추정</span>`
+    : '';
   return `<div class="prob-bar ${compact?'compact':''}">
     <div class="track"><div class="fill" style="width:${value}%;background:${tone}"></div></div>
-    <span class="val" style="color:${tone}">${value}<span class="pct">%</span></span>
+    <span class="val" style="color:${tone}">${value}<span class="pct">%</span></span>${hint}
   </div>`;
 }
 
@@ -1002,6 +926,9 @@ function teacherLineCard(label, t) {
 }
 
 function renderCardView(apps) {
+  if (!apps.length) {
+    return `<div class="detail-empty" style="padding:60px 20px"><div class="ic">📭</div>표시할 신청서가 없습니다<br><span style="font-size:12px;color:#9CA3AF">최근 ${72}시간 내 신청서 기준</span></div>`;
+  }
   return `<div class="cards">${apps.map(a => `
     <div class="app-card ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
       <div class="col-identity">
@@ -1031,14 +958,14 @@ function renderCardView(apps) {
       <div class="col-priority">
         <div class="top">
           <div class="section-label">매칭 확률</div>
-          ${probBar(a.probability)}
+          ${probBar(a.probability, false, a.probabilitySource)}
         </div>
         <div class="owner-line">
           <span class="avatar gray">${(a.owner||'?')[0]}</span>${a.owner}
         </div>
         <div class="action-row">
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();selectApp('${a.id}')">상세</button>
-          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();alert('액션 (구현 예정)')">액션</button>
+          <button class="btn btn-primary btn-sm" disabled title="준비 중" onclick="event.stopPropagation()">액션</button>
         </div>
       </div>
     </div>
@@ -1078,7 +1005,7 @@ function renderTableView(apps) {
           ${compactTeacher('1', a.recommendation.t1)}
           ${compactTeacher('2', a.recommendation.t2)}
         </div>
-        <div>${probBar(a.probability, true)}</div>
+        <div>${probBar(a.probability, true, a.probabilitySource)}</div>
         <div style="font-size:12.5px;color:#4B5563;display:flex;align-items:center;gap:6px">
           <span class="avatar gray">${(a.owner||'?')[0]}</span>${a.owner}
         </div>
@@ -1124,7 +1051,7 @@ function renderKanbanView(apps) {
             ${compactTeacher('2', a.recommendation.t2)}
           </div>
           <div class="footer">
-            ${probBar(a.probability, true)}
+            ${probBar(a.probability, true, a.probabilitySource)}
             <span>${a.owner}</span>
           </div>
         </div>
@@ -1185,13 +1112,13 @@ function renderDetailPanel(app) {
         </div>
         ${teacherDetail('1지망', app.recommendation.t1)}
         ${teacherDetail('2지망', app.recommendation.t2)}
-        <button class="btn btn-secondary btn-sm" onclick="alert('백업 후보 추가 (구현 예정)')"><span class="icon">＋</span>백업 후보 추가</button>
+        <button class="btn btn-secondary btn-sm" disabled title="준비 중"><span class="icon">＋</span>백업 후보 추가</button>
       </div>
 
       <div class="dp-section">
         <div class="section-label">우선순위 / 마감</div>
         <div class="kv"><span class="k">마감</span><span class="v">${dlTag(app.deadline, app.deadlineState)}</span></div>
-        <div class="kv"><span class="k">매칭 확률</span><span class="v">${probBar(app.probability, true)}</span></div>
+        <div class="kv"><span class="k">매칭 확률</span><span class="v">${probBar(app.probability, true, app.probabilitySource)}</span></div>
         <div class="kv"><span class="k">접수</span><span class="v" style="color:#4B5563;font-variant-numeric:tabular-nums">${app.receivedAt}</span></div>
         <div class="kv"><span class="k">담당자</span><span class="v">${app.owner}</span></div>
       </div>
@@ -1217,9 +1144,9 @@ function renderDetailPanel(app) {
 
     </div>
     <div class="dp-foot">
-      <button class="btn btn-secondary" onclick="alert('메모 (구현 예정)')">메모</button>
+      <button class="btn btn-secondary" disabled title="준비 중">메모</button>
       <div class="spacer"></div>
-      <button class="btn btn-primary" onclick="alert('부모님께 전달 (구현 예정)')">부모님께 전달</button>
+      <button class="btn btn-primary" disabled title="준비 중">부모님께 전달</button>
     </div>
   </aside>`;
 }
@@ -1266,7 +1193,12 @@ function render() {
   }
 }
 
-function selectApp(id) { state.selectedId = id; render(); }
+function selectApp(id) {
+  state.selectedId = id;
+  // 칸반에서 카드 클릭 시 상세 패널이 안 보이는 문제 — 카드 뷰로 자동 전환
+  if (state.layout === 'kanban') state.layout = 'card';
+  render();
+}
 function setSort(key) {
   state.sort = key;
   document.querySelectorAll('#sort-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === key));
@@ -1292,7 +1224,8 @@ function toggleOwnerDD(e) {
   const menu = document.getElementById('owner-menu');
   const isOpen = menu.style.display !== 'none';
   if (isOpen) { menu.style.display = 'none'; return; }
-  const options = ['전체', ...ASSIGNEES, ...(state.ownerOptions||[]).filter(o => !ASSIGNEES.includes(o) && o !== '—')];
+  // 담당자 옵션은 라이브 데이터의 admin_name distinct로 구성
+  const options = ['전체', ...((state.ownerOptions||[]).filter(o => o && o !== '—'))];
   menu.innerHTML = options.map(o => `<button class="${o===state.owner?'active':''}" onclick="setOwner('${o.replace(/'/g,"\\'")}')">${o}</button>`).join('');
   menu.style.display = '';
 }
@@ -1328,17 +1261,13 @@ function deriveInsights() {
   const el = document.getElementById('insight-result');
   el.style.padding = '14px';
   el.style.border = '1px solid #EEF1F4';
-  el.style.background = '#fff';
-  el.style.color = '#1E2530';
+  el.style.background = '#FFF8E6';
+  el.style.color = '#8A5B00';
   el.style.textAlign = 'left';
   el.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px">핵심 인사이트 (mock)</div>
-    <div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px;line-height:1.55">
-      <div style="padding:8px 10px;background:#F4F8FF;border-radius:6px">• 메모 빈도 1위: 지역 가용성 (마포구·고양시 권역 동시 발견)</div>
-      <div style="padding:8px 10px;background:#FDF0CC;border-radius:6px;color:#8A5B00">• 미응답 30분 초과 → 자동 추가 발송 룰 의견 반복</div>
-      <div style="padding:8px 10px;background:#E4F5EA;border-radius:6px;color:#1F6B3C">• 재이용 7회 이상 고객 매칭 성공률 90%+</div>
+    <div style="font-size:12.5px;line-height:1.6">
+      <b>준비 중</b> — LLM 인사이트 자동 생성은 메모 영속화 + LLM 파이프라인 연동 후 활성화됩니다.
     </div>
-    <div style="margin-top:10px;font-size:11px;color:#9CA3AF">분석 모델: Claude (mock) · 입력 메모 ${memoCount}건</div>
   `;
 }
 
