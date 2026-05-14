@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     otp_secret_key: str = ""
     otp_session_hours: int = 8
 
+    # 마감 임박 임계값(분). DeadlineTag urgent/soon 분기.
+    urgent_threshold_min: int = 240  # 4시간
+    soon_threshold_min: int = 1440  # 24시간
+
+    # 신청서 조회 윈도우 (시간)
+    recent_window_hours: int = 72
+
     @property
     def origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

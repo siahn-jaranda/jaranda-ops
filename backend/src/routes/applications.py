@@ -6,19 +6,26 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from src.config import settings
 from src.db import get_replica
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
+logger = logging.getLogger(__name__)
+
+# 자란다 DB 타임스탬프는 KST naive로 저장됨 (Asia/Seoul, +09:00)
+KST = timezone(timedelta(hours=9))
 
 
 # 자란다 콘솔 status 코드 → 핸드오프 statusKey + 한국어 라벨.
 # 핸드오프 STATUS_META: recommending(추천중) / review(부모님 확인) / searching(선생님 미정)
 # / matched(매칭 완료) / cancelled
+# 메모리 reference_recommendation_status: 10/20/40/90/99/100/101 외 코드는 "기타"로 노출
 STATUS_META = {
     10: ("recommending", "진행중"),
     20: ("review", "부모님 확인"),
@@ -39,22 +46,23 @@ def _is_real_ts(value: Any) -> bool:
 
 
 def _timer_min(deadline: Any) -> int | None:
+    """KST 기준 마감까지 남은 분. 자란다 DB 타임스탬프는 KST naive."""
     if not _is_real_ts(deadline):
         return None
-    dl = deadline if deadline.tzinfo else deadline.replace(tzinfo=timezone.utc)
-    delta = (dl - datetime.now(timezone.utc)).total_seconds() / 60
+    dl = deadline if deadline.tzinfo else deadline.replace(tzinfo=KST)
+    delta = (dl - datetime.now(KST)).total_seconds() / 60
     if delta <= 0:
         return None
     return int(delta)
 
 
 def _deadline_state(timer_min: int | None) -> str:
-    """핸드오프 DeadlineTag state: urgent(<4h) / soon(<24h) / ok(그 외)."""
+    """DeadlineTag state. 임계값은 settings에서 주입."""
     if timer_min is None:
         return "ok"
-    if timer_min < 4 * 60:
+    if timer_min < settings.urgent_threshold_min:
         return "urgent"
-    if timer_min < 24 * 60:
+    if timer_min < settings.soon_threshold_min:
         return "soon"
     return "ok"
 
@@ -112,17 +120,17 @@ def _compute_prob(
     is_new: bool,
     timer_min: int | None,
     is_urgent: bool,
-) -> int:
-    """LLM 예측 부재 시 휴리스틱 매칭 확률. 0~100.
+) -> dict[str, Any]:
+    """매칭 확률을 dict로 반환. {value: 0~100, source: heuristic|actual}.
 
-    base 30 + 지원 응답률(최대 +45) + 재이용(+10) + 지명·요청 모수(최대 +5)
-    + 마감 여유/임박(±15) + 긴급(-10).
-    confirmed 존재 시 100, cancelled 시 0.
+    LLM 예측 미구현 — 휴리스틱: base 30 + 지원 응답률(최대 +45) + 재이용(+10)
+    + 지명·요청 모수(최대 +5) + 마감 여유/임박(±15) + 긴급(-10).
+    confirmed/cancelled 시점 정보가 있으면 source=actual로 마킹.
     """
     if _is_real_ts(confirmed):
-        return 100
+        return {"value": 100, "source": "actual"}
     if _is_real_ts(cancelled):
-        return 0
+        return {"value": 0, "source": "actual"}
 
     score = 30
     if applied_count >= 1:
@@ -138,29 +146,32 @@ def _compute_prob(
         score += 10
 
     if timer_min is not None:
-        if timer_min < 4 * 60:
+        if timer_min < settings.urgent_threshold_min:
             score -= 15
-        elif timer_min < 24 * 60:
+        elif timer_min < settings.soon_threshold_min:
             score -= 5
-        elif timer_min > 48 * 60:
+        elif timer_min > 2 * settings.soon_threshold_min:
             score += 5
 
     if is_urgent:
         score -= 10
 
-    return max(5, min(100, score))
+    return {"value": max(5, min(100, score)), "source": "heuristic"}
 
 
-def _to_row(rec: dict[str, Any]) -> dict[str, Any]:
+def _to_row(
+    rec: dict[str, Any],
+    parent_history: dict[str, int] | None = None,
+) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
-    실데이터 있음: status, statusKey, deadlineState, assignee, request, region,
-                  schedule(격주/정기), preferableGender, requestedTeacherName, price
-    아직 mock/null: prob (LLM 예측), appCount/confirmedCount/lessonCount/visitsAfter
-                  (parent 누적 집계 후속), viewed/totalHours/rating (선생님 활동·이벤트 후속)
+    실데이터: status, statusKey, deadlineState, assignee, request, region,
+            schedule, preferableGender, requestedTeacherName, price,
+            appCount/confirmedCount/lessonCount(parent_history 주입 시).
+    추정: prob (휴리스틱, source=heuristic으로 마킹).
     """
     status_code = rec.get("status")
-    status_key, status_label = STATUS_META.get(status_code, ("review", f"상태{status_code}"))
+    status_key, status_label = STATUS_META.get(status_code, ("etc", f"상태{status_code}"))
     confirmed = rec.get("confirmed_at")
     cancelled = rec.get("cancelled_at")
 
@@ -205,7 +216,7 @@ def _to_row(rec: dict[str, Any]) -> dict[str, Any]:
         "key": str(rec["sid"]),
         "sid": f"SID-{rec['sid']}",
         "title": f"SID-{rec['sid']} · {rec.get('parent_name') or '학부모'} 학부모",
-        "sub": f"{rec.get('child_name') or '학생'} · {rec.get('policy_name') or '—'} · 접수 {date_str}",
+        "sub": f"{rec.get('child_name') or '학생'} · {rec.get('policy_name') or '정책 미연결'} · 접수 {date_str}",
         "date": date_str,
         # 핸드오프 매핑
         "status": status_label,
@@ -213,12 +224,12 @@ def _to_row(rec: dict[str, Any]) -> dict[str, Any]:
         "deadlineState": deadline_state,
         "deadlineLabel": deadline_label,
         "region": region,
-        # 기존 mock 스키마 호환 필드
         "assignee": rec.get("admin_name") or "—",
         "timerMin": timer,
         "reqCount": int(rec.get("requested_count") or 0),
         "applyCount": int(rec.get("applied_count") or 0),
         "confirmed": confirmed.strftime("%H:%M") if _is_real_ts(confirmed) else "—",
+        # prob: { value: 0~100, source: heuristic|actual }
         "prob": _compute_prob(
             confirmed, cancelled,
             int(rec.get("applied_count") or 0),
@@ -230,10 +241,10 @@ def _to_row(rec: dict[str, Any]) -> dict[str, Any]:
         "result": result,
         "resultType": result_type,
         "isNew": bool(rec.get("new_parent")) if rec.get("new_parent") is not None else None,
-        "appCount": None,
-        "confirmedCount": None,
-        "lessonCount": None,
-        "visitsAfter": None,
+        # parent 누적 이력 — get_parent_history_counts 결과 주입
+        "appCount": (parent_history or {}).get("app_count"),
+        "confirmedCount": (parent_history or {}).get("confirmed_count"),
+        "lessonCount": (parent_history or {}).get("lesson_count"),
         "policy": rec.get("policy_name"),
         "price": price_str,
         "request": free_request,
@@ -242,45 +253,84 @@ def _to_row(rec: dict[str, Any]) -> dict[str, Any]:
         "isUrgent": bool(rec.get("is_urgent")),
         "autoConfirm": bool(rec.get("auto_confirm")),
         "matchedTeacher": rec.get("matched_teacher_name") or "",
-        # 핸드오프 ViewedSummary용 — 이벤트 시스템 후속. placeholder 노출.
-        "viewedSummary": None,
     }
 
 
 @router.get("")
 async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
     replica = get_replica()
-    rows = await replica.list_recent_recommendations(limit=limit)
+    try:
+        rows = await replica.list_recent_recommendations(limit=limit)
+        parent_sids = list({r["parent_account_sid"] for r in rows if r.get("parent_account_sid")})
+        history_map = await replica.get_parent_history_counts(parent_sids)
+    except Exception:
+        logger.exception("list_applications failed")
+        raise HTTPException(status_code=503, detail="replica query failed")
+
     return {
         "count": len(rows),
-        "rows": [_to_row(r) for r in rows],
+        "rows": [
+            _to_row(r, history_map.get(r.get("parent_account_sid")))
+            for r in rows
+        ],
     }
 
 
 @router.get("/{sid}")
 async def get_application(sid: str) -> dict[str, Any]:
     replica = get_replica()
-    rec = await replica.get_recommendation(sid)
+    try:
+        rec = await replica.get_recommendation(sid)
+    except Exception:
+        logger.exception("get_application failed sid=%s", sid)
+        raise HTTPException(status_code=503, detail="replica query failed")
+
     if rec is None:
         raise HTTPException(status_code=404, detail="application not found")
-    return _to_row(rec)
+
+    parent_sid = rec.get("parent_account_sid")
+    history_map: dict[str, dict[str, int]] = {}
+    if parent_sid:
+        try:
+            history_map = await replica.get_parent_history_counts([parent_sid])
+        except Exception:
+            logger.exception("get_parent_history_counts failed sid=%s", parent_sid)
+
+    return _to_row(rec, history_map.get(parent_sid) if parent_sid else None)
 
 
 @router.get("/{sid}/teachers")
 async def list_teachers(sid: str) -> dict[str, Any]:
     replica = get_replica()
-    rows = await replica.list_recommendation_teachers(sid)
+    try:
+        rows = await replica.list_recommendation_teachers(sid)
+    except Exception:
+        logger.exception("list_teachers failed sid=%s", sid)
+        raise HTTPException(status_code=503, detail="replica query failed")
+
     teachers = []
     for r in rows:
         applied = bool(r.get("applied"))
         rejected = bool(r.get("rejected"))
+        requested = bool(r.get("requested"))
         if applied:
             stat = "응답완료"
         elif rejected:
             stat = "거절"
+        elif requested:
+            stat = "요청됨"
         else:
             stat = "미응답"
-        name = r.get("teacher_name") or f"선생님-{r.get('teacher_account_sid')}"
+        teacher_name = r.get("teacher_name")
+        if not teacher_name:
+            logger.warning(
+                "teacher name missing — replica stale? account_sid=%s recommendation_sid=%s",
+                r.get("teacher_account_sid"),
+                sid,
+            )
+            name = "이름 없음"
+        else:
+            name = teacher_name
         responded_at = r.get("last_responded_at")
         teachers.append(
             {
@@ -289,14 +339,6 @@ async def list_teachers(sid: str) -> dict[str, Any]:
                 "init": name[:1] if name else "?",
                 "stat": stat,
                 "responded_at": responded_at.isoformat() if _is_real_ts(responded_at) else None,
-                # 활동정보(totalHours/subject/rating/reviewCount)와 viewed(프로필 열람) 는
-                # 별도 테이블/이벤트 시스템 조회 필요 — 후속 작업
-                "totalHours": None,
-                "subject": None,
-                "subjectHours": None,
-                "rating": None,
-                "reviewCount": None,
-                "viewed": None,
             }
         )
     return {"sid": sid, "teachers": teachers}
