@@ -3,709 +3,675 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>자란다 매칭 운영 툴</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<title>자란다 OPS — 매칭 신청서</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg: #F5F4F0;
-  --surface: #FFFFFF;
-  --surface2: #F0EFEb;
-  --border: #E2E0DA;
-  --border2: #CCCAC3;
-  --text: #1A1917;
-  --text2: #6B6861;
-  --text3: #9E9C97;
-  --green: #1D9E75;
-  --green-bg: #E1F5EE;
-  --green-text: #085041;
-  --amber: #BA7517;
-  --amber-bg: #FAEEDA;
-  --amber-text: #633806;
-  --red: #A32D2D;
-  --red-bg: #FCEBEB;
-  --red-text: #791F1F;
-  --blue: #185FA5;
-  --blue-bg: #E6F1FB;
-  --blue-text: #0C447C;
-  --gray-bg: #F1EFE8;
-  --gray-text: #444441;
-  --mono: 'JetBrains Mono', monospace;
-  --sans: 'Noto Sans KR', sans-serif;
-  --radius: 8px;
-  --radius-lg: 12px;
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: "Pretendard","Pretendard Variable",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  color: #1E2530; background: #F7F8FA;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01","ss02";
 }
-
-html, body {
-  height: 100%;
-  font-family: var(--sans);
-  font-size: 13px;
-  color: var(--text);
-  background: var(--bg);
-  line-height: 1.5;
-}
-
-/* LAYOUT */
-.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 20px; height: 52px;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.topbar-left { display: flex; align-items: center; gap: 12px; }
-.brand {
-  background: #085041; color: #9FE1CB;
-  font-size: 11px; font-weight: 600; letter-spacing: .08em;
-  padding: 3px 10px; border-radius: 6px;
-}
-.page-title { font-size: 15px; font-weight: 600; }
-.page-sub { font-size: 12px; color: var(--text2); }
-.topbar-right { display: flex; align-items: center; gap: 8px; }
-.data-source-pill {
-  font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
-  padding: 3px 8px; border-radius: 99px;
-  background: var(--gray-bg); color: var(--gray-text);
-}
-.data-source-pill.live { background: var(--green-bg); color: var(--green-text); }
-.topbar-meta { font-size: 12px; color: var(--text3); }
-
-.main { display: flex; flex: 1; overflow: hidden; }
-
-/* LIST PANEL */
-.list-panel {
-  width: 100%;
-  display: flex; flex-direction: column;
-  overflow: hidden;
-}
-
-.list-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 20px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  flex-shrink: 0;
-}
-.list-header-left { display: flex; align-items: center; gap: 8px; }
-.list-count { font-size: 12px; color: var(--text2); }
-
-.tbl-scroll { overflow-y: auto; flex: 1; }
-
-table { width: 100%; border-collapse: collapse; background: var(--surface); }
-thead { position: sticky; top: 0; z-index: 2; background: var(--surface); }
-th {
-  font-size: 11px; font-weight: 500; color: var(--text2);
-  padding: 8px 10px; text-align: left;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap; user-select: none;
-}
-th:first-child { padding-left: 20px; }
-td {
-  padding: 10px 10px; border-bottom: 1px solid var(--border);
-  vertical-align: middle; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis;
-}
-td:first-child { padding-left: 20px; }
-tbody tr { cursor: pointer; transition: background .1s; }
-tbody tr:hover { background: #F8F7F4; }
-tbody tr.active { background: var(--green-bg) !important; }
-tbody tr:last-child td { border-bottom: none; }
-
-/* BADGES */
-.bdg {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 11px; font-weight: 500; padding: 2px 8px;
-  border-radius: 99px; white-space: nowrap;
-}
-.bdg-완료 { background: var(--green-bg); color: var(--green-text); }
-.bdg-진행 { background: var(--blue-bg); color: var(--blue-text); }
-.bdg-미배정 { background: var(--gray-bg); color: var(--gray-text); }
-.bdg-취소 { background: var(--red-bg); color: var(--red-text); }
-.bdg-이용 { background: var(--amber-bg); color: var(--amber-text); }
-.bdg-신규 { background: var(--gray-bg); color: var(--gray-text); }
-
-.sid { font-family: var(--mono); font-size: 11px; color: var(--text2); font-weight: 500; }
-
-.timer { font-weight: 600; font-size: 12px; }
-.timer-r { color: var(--red); }
-.timer-a { color: var(--amber); }
-.timer-g { color: var(--green); }
-.timer-none { color: var(--text3); }
-
-.prob-wrap { display: flex; align-items: center; gap: 5px; }
-.prob-bar { width: 44px; height: 5px; background: var(--border); border-radius: 99px; overflow: hidden; flex-shrink: 0; }
-.prob-fill { height: 100%; border-radius: 99px; }
-.prob-val { font-size: 12px; font-weight: 500; }
-
-/* DETAIL PANEL */
-/* CARD-ROW STRIP */
-.row-strip-header {
-  display: grid;
-  grid-template-columns: 1.5fr 1.3fr 0.85fr 1.45fr 1.45fr 0.7fr 1.1fr 1.15fr;
-  gap: 6px; padding: 6px 14px;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  font-size: 10px; font-weight: 600; color: var(--text3);
-  letter-spacing: .06em; text-transform: uppercase;
-  position: sticky; top: 0; z-index: 2;
-}
-.rsh { padding: 0 8px; }
-
-.rows-scroll { overflow-y: auto; flex: 1; }
-.data-rows { display: flex; flex-direction: column; }
-
-.data-row {
-  display: grid;
-  grid-template-columns: 1.5fr 1.3fr 0.85fr 1.45fr 1.45fr 0.7fr 1.1fr 1.15fr;
-  gap: 6px; padding: 8px 14px;
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  min-height: 70px;
-  transition: background .12s;
-}
-.data-row:hover { background: var(--surface2); }
-.data-row.active { background: var(--green-bg); border-bottom-color: transparent; }
-
-.rcard {
-  padding: 8px 10px; border-radius: 8px;
-  font-size: 11px; line-height: 1.4;
-  display: flex; flex-direction: column; gap: 2px;
-  min-width: 0; overflow: hidden;
-}
-.rcard-app { background: #E1F5EE; }
-
-/* 디자인 핸드오프: DeadlineTag */
-.dl-tag {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 2px 7px; border-radius: 6px;
-  font-size: 10.5px; font-weight: 600; line-height: 1.4;
-  white-space: nowrap;
-}
-.dl-tag.dl-urgent { background: #FBE0DC; color: #A4271A; }
-.dl-tag.dl-soon   { background: #FDF0CC; color: #8A5B00; }
-.dl-tag.dl-ok     { background: #EEF1F4; color: #4B5563; }
-
-/* 요청 칩 (정형 조건들) */
-.rc-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
-.rc-chip {
-  font-size: 10px; line-height: 1.4;
-  padding: 1px 6px; border-radius: 99px;
-  background: rgba(0,0,0,0.05); color: var(--text2);
-}
-
-/* placeholder: 후속 연결 예정 데이터 표시 */
-.ph {
-  font-size: 11px; font-style: italic; color: var(--text3);
-  background: var(--surface2); border: 1px dashed var(--border2);
-  padding: 1px 6px; border-radius: 4px;
-}
-.rcard-history { background: #FAEEDA; }
-.rcard-rec { background: #FAEEDA; }
-.rcard-teacher { background: #F2F4B0; }
-.rcard-teacher.empty {
-  background: transparent;
-  border: 1px dashed var(--border2);
-  align-items: center; justify-content: center;
-}
-.rcard-teacher.empty::before {
-  content: '미지원'; color: var(--text3); font-size: 11px;
-}
-.rcard-more {
-  background: var(--surface2);
-  align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600; color: var(--text);
-}
-.rcard-more.zero { color: var(--text3); font-weight: 400; }
-
-.viewed-pill {
-  display: inline-block; font-size: 10px; font-weight: 500;
-  padding: 1px 6px; border-radius: 99px;
-}
-.viewed-pill.on { background: var(--green); color: #fff; }
-.viewed-pill.off { background: var(--surface2); color: var(--text3); }
-
-/* DETAIL 4-CARDS */
-.detail-4-cards {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;
-}
-@media (max-width: 1100px) {
-  .detail-4-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-.dcard {
-  background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 12px;
-  min-width: 0;
-}
-.dcard-title {
-  font-size: 11px; font-weight: 600; color: var(--text2);
-  letter-spacing: .06em; text-transform: uppercase;
-  margin-bottom: 10px;
-}
-
-/* Timeline sub event (부모님 앱 로그인 등) */
-.tl-item.sub { padding-left: 22px; padding-bottom: 8px; }
-.tl-item.sub .tl-dot { width: 6px; height: 6px; margin-top: 4px; opacity: .7; }
-.tl-item.sub .tl-line { background: var(--border2); opacity: .6; }
-.tl-item.sub .tl-action { font-size: 11px; color: var(--text2); font-weight: 400; }
-.tl-item.sub .tl-time { font-size: 10px; }
-.tl-item.sub .tl-detail { font-size: 10px; color: var(--text3); }
-
-/* TEACHER DETAIL CARD */
-.teacher-cards-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-}
-.teacher-card {
-  background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 14px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-.tc-header { display: flex; align-items: center; gap: 10px; }
-.tc-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: var(--green-bg); color: var(--green-text);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 600; font-size: 14px; flex-shrink: 0;
-}
-.tc-name-block { flex: 1; min-width: 0; }
-.tc-name { font-size: 13px; font-weight: 600; }
-.tc-stat { font-size: 11px; color: var(--text2); margin-top: 2px; }
-.tc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.tc-stat-item {
-  background: var(--surface); border-radius: var(--radius);
-  padding: 8px 10px;
-}
-.tc-stat-lbl { font-size: 10px; color: var(--text3); margin-bottom: 2px; }
-.tc-stat-val { font-size: 13px; font-weight: 600; color: var(--text); }
-.tc-stat-val .star { color: var(--amber); }
-
-.link-original {
-  font-size: 12px; color: var(--blue); text-decoration: none;
-  padding: 4px 10px; border: 1px solid var(--blue);
-  border-radius: var(--radius); margin-left: 8px;
-}
-.link-original:hover { background: var(--blue-bg); }
-.rcard-result { background: #D4EDE4; }
-.rcard-action { background: #E6F1FB; }
-
-.rc-title { font-size: 12px; font-weight: 600; color: var(--text); }
-.rc-sub { font-size: 11px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rc-meta { font-size: 10px; color: var(--text3); }
-.rc-row-flex { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.rc-num { font-weight: 600; color: var(--text); }
-.rc-num-mute { color: var(--text3); }
-.rc-stat-ok { color: var(--green-text); font-weight: 500; }
-.rc-stat-warn { color: var(--amber-text); font-weight: 500; }
-.rc-stat-bad { color: var(--red-text); font-weight: 500; }
-.rc-stat-mute { color: var(--text3); }
-
-.detail-block {
-  background: var(--surface);
-  border-top: 1px solid var(--green);
-  border-bottom: 1px solid var(--border);
-}
-.detail-inline { display: flex; flex-direction: column; }
-.detail-inline .dp-header,
-.detail-inline .insight-box,
-.detail-inline .dp-section,
-.detail-inline .action-btns,
-.detail-inline .memo-area { padding-left: 24px; padding-right: 24px; }
-.detail-inline .insight-box { margin-left: 24px; margin-right: 24px; padding-left: 12px; padding-right: 12px; }
-
-.dp-header {
-  padding: 14px 18px 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.dp-header-top { display: flex; justify-content: space-between; align-items: flex-start; }
-.dp-title { font-size: 15px; font-weight: 600; }
-.dp-sub { font-size: 12px; color: var(--text2); margin-top: 3px; }
-
-.dp-scroll { flex: 1; overflow-y: auto; }
-
-.dp-section { padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.sec-lbl {
-  font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text3); margin-bottom: 10px;
-}
-
-/* INSIGHT BOX */
-.insight-box {
-  margin: 12px 18px 0;
-  padding: 10px 12px;
-  border-left: 3px solid var(--green);
-  background: var(--green-bg);
-  border-radius: 0 var(--radius) var(--radius) 0;
-}
-.insight-box.warn { border-left-color: var(--amber); background: var(--amber-bg); }
-.insight-box.danger { border-left-color: var(--red); background: var(--red-bg); }
-.insight-lbl { font-size: 11px; font-weight: 600; color: var(--green-text); margin-bottom: 3px; }
-.insight-box.warn .insight-lbl { color: var(--amber-text); }
-.insight-box.danger .insight-lbl { color: var(--red-text); }
-.insight-txt { font-size: 12px; color: var(--green-text); line-height: 1.55; }
-.insight-box.warn .insight-txt { color: var(--amber-text); }
-.insight-box.danger .insight-txt { color: var(--red-text); }
-
-/* INFO ROWS */
-.info-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
-.info-key { font-size: 12px; color: var(--text2); flex-shrink: 0; }
-.info-val { font-size: 12px; font-weight: 500; color: var(--text); text-align: right; }
-
-/* TEACHER ROWS */
-.teacher-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 0; border-bottom: 1px solid var(--border);
-}
-.teacher-row:last-child { border-bottom: none; }
-.t-avatar {
-  width: 28px; height: 28px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600; flex-shrink: 0;
-}
-.t-name { font-size: 12px; font-weight: 500; flex: 1; min-width: 0; }
-.t-stat { font-size: 11px; color: var(--text2); }
-.t-resp { font-size: 11px; font-weight: 500; margin-left: auto; white-space: nowrap; }
-
-/* TIMELINE */
-.tl-item { display: flex; gap: 10px; padding-bottom: 12px; position: relative; }
-.tl-item:last-child { padding-bottom: 0; }
-.tl-dot-col { display: flex; flex-direction: column; align-items: center; width: 14px; flex-shrink: 0; }
-.tl-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
-.tl-line { flex: 1; width: 1px; background: var(--border); margin-top: 4px; min-height: 12px; }
-.tl-item:last-child .tl-line { display: none; }
-.tl-content { flex: 1; min-width: 0; }
-.tl-action { font-size: 12px; font-weight: 500; }
-.tl-time { font-size: 11px; color: var(--text3); margin-top: 1px; }
-.tl-detail { font-size: 11px; color: var(--text2); margin-top: 3px; line-height: 1.4; }
-
-/* MEMO */
-.memo-area { padding: 14px 18px; flex-shrink: 0; border-top: 1px solid var(--border); }
-.memo-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.memo-item { background: var(--bg); border-radius: var(--radius); padding: 8px 10px; }
-.memo-who { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
-.memo-txt { font-size: 12px; color: var(--text); line-height: 1.55; }
-.memo-empty { font-size: 12px; color: var(--text3); margin-bottom: 10px; }
-.memo-input-row { display: flex; gap: 8px; align-items: flex-end; }
-.memo-input-row textarea {
-  flex: 1; font-size: 12px; font-family: var(--sans);
-  min-height: 54px; padding: 8px 10px;
-  border: 1px solid var(--border2); border-radius: var(--radius);
-  background: var(--surface); color: var(--text);
-  resize: none; outline: none;
-  transition: border-color .15s;
-}
-.memo-input-row textarea:focus { border-color: var(--green); }
-.btn-save {
-  height: 32px; padding: 0 14px; font-size: 12px; font-family: var(--sans);
-  background: var(--green); color: #fff; border: none;
-  border-radius: var(--radius); cursor: pointer; font-weight: 500;
-  white-space: nowrap; flex-shrink: 0;
-  transition: opacity .15s;
-}
-.btn-save:hover { opacity: .88; }
-
-/* BTN */
-.btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 30px; padding: 0 12px; font-size: 12px; font-family: var(--sans);
-  background: var(--surface); color: var(--text);
-  border: 1px solid var(--border2); border-radius: var(--radius);
-  cursor: pointer; font-weight: 500; white-space: nowrap;
-  transition: background .1s, border-color .1s;
-}
-.btn:hover { background: var(--surface2); border-color: var(--border2); }
-.btn-primary { background: var(--green); color: #fff; border-color: var(--green); }
-.btn-primary:hover { background: #0F6E56; border-color: #0F6E56; }
-.btn-close {
-  background: none; border: none; cursor: pointer; color: var(--text3);
-  font-size: 18px; line-height: 1; padding: 2px 4px;
-  border-radius: 4px; transition: color .1s, background .1s;
-}
-.btn-close:hover { color: var(--text); background: var(--surface2); }
-
-.filter-select {
-  height: 30px; padding: 0 26px 0 10px; font-size: 12px; font-family: var(--sans);
-  background: var(--surface) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%236B6861' d='M0 0l5 6 5-6z'/></svg>") no-repeat right 10px center;
-  color: var(--text); border: 1px solid var(--border2); border-radius: var(--radius);
-  cursor: pointer; font-weight: 500; appearance: none;
-}
-.filter-select:hover { background-color: var(--surface2); }
-.filter-select:focus { outline: none; border-color: var(--green); }
-
-.action-btns { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); flex-shrink: 0; }
-
-/* SCROLLBAR */
-::-webkit-scrollbar { width: 5px; }
+button { font-family: inherit; border: none; background: none; padding: 0; cursor: pointer; color: inherit; }
+input, textarea, select { font-family: inherit; }
+::selection { background: #D8E4FB; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #D8DDE3; border-radius: 999px; border: 2px solid #F7F8FA; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text3); }
 
-/* EMPTY */
-.no-teacher { font-size: 12px; color: var(--text3); padding: 4px 0; }
-
-/* TABS */
-.tabs { display: flex; gap: 2px; margin-left: 4px; }
-.tab {
-  background: transparent; border: none; cursor: pointer;
-  padding: 6px 12px; border-radius: 6px;
-  font-size: 13px; font-weight: 500; color: var(--text2);
-  font-family: var(--sans);
+/* ===== HEADER ===== */
+.topbar {
+  background: #fff; border-bottom: 1px solid #E5E8EC;
+  padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 10;
 }
-.tab:hover { background: var(--surface2); color: var(--text); }
-.tab.active { background: #085041; color: #fff; }
-
-/* PAGES */
-.page { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-/* INSIGHT PAGE */
-.page-insight { display: none; overflow-y: auto; background: var(--bg); }
-.page-insight.active { display: flex; }
-
-.insight-head { padding: 20px 24px 12px; flex-shrink: 0; }
-.insight-head h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-.insight-head p { font-size: 12px; color: var(--text2); }
-
-.insight-grid {
-  display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px;
-  padding: 0 24px 16px;
+.topbar-left { display: flex; align-items: center; gap: 28px; }
+.brand-block { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  width: 28px; height: 28px; border-radius: 8px; background: #1B4FB8;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 13px; letter-spacing: -0.02em;
 }
-@media (max-width: 1100px) { .insight-grid { grid-template-columns: 1fr; } }
+.brand-name { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: #0F172A; }
+.brand-name .sub { color: #6B7280; font-weight: 600; }
+.beta-badge {
+  font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
+  background: #EEF1F4; color: #4B5563; letter-spacing: 0.04em;
+}
+.tabs {
+  display: flex; gap: 4px; padding: 4px;
+  background: #F4F6F8; border-radius: 10px;
+}
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.search-wrap { position: relative; }
+.search-wrap input {
+  background: #F4F6F8; border: 1px solid transparent; border-radius: 8px;
+  padding: 8px 12px 8px 32px; font-size: 13px; width: 220px;
+  color: #1E2530; outline: none;
+}
+.search-wrap input:focus { border-color: #1B4FB8; background: #fff; }
+.search-wrap .icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 13px; opacity: .5; }
+.avatar {
+  width: 32px; height: 32px; border-radius: 999px; background: #1B4FB8; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 12.5px; margin-left: 4px;
+}
+.avatar.gray { background: #EEF1F4; color: #4B5563; width: 20px; height: 20px; font-size: 10px; }
 
-.card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 16px; display: flex; flex-direction: column; gap: 10px;
+/* ===== BTN (atomic) ===== */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; font-size: 13px; font-weight: 600;
+  border-radius: 8px; cursor: pointer; letter-spacing: -0.01em;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  border: 1px solid transparent; line-height: 1.2; white-space: nowrap;
 }
-.card + .card { margin-top: 12px; }
+.btn .icon { font-size: 12px; opacity: .9; }
+.btn-sm { padding: 6px 10px; font-size: 12px; gap: 5px; border-radius: 6px; }
+.btn-lg { padding: 10px 18px; font-size: 14px; gap: 8px; border-radius: 9px; }
+.btn-primary { background: #1B4FB8; color: #fff; border-color: #1B4FB8; }
+.btn-primary:hover { background: #0F2B6E; border-color: #0F2B6E; }
+.btn-secondary { background: #fff; color: #1E2530; border-color: #D8DDE3; }
+.btn-secondary:hover { background: #F4F6F8; }
+.btn-ghost { background: transparent; color: #1E2530; }
+.btn-ghost:hover { background: #EEF1F4; }
+.btn-danger { background: #fff; color: #A4271A; border-color: #F0C8C2; }
+.btn-danger:hover { background: #FBE0DC; }
+.btn-tab {
+  background: transparent; color: #6B7280;
+  padding: 8px 14px; font-size: 13px; font-weight: 550;
+  border-radius: 6px; border: 1px solid transparent;
+}
+.btn-tab:hover { background: #F4F6F8; color: #1E2530; }
+.btn-tab.active {
+  background: #fff; color: #1E2530; border-color: #D8DDE3;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.06);
+}
 
-.memo-write select, .memo-write textarea,
-.feed-filters select {
-  font-family: var(--sans); font-size: 12px;
-  border: 1px solid var(--border2); border-radius: var(--radius);
-  padding: 6px 10px; background: var(--surface); color: var(--text);
+/* ===== TOOLBAR ===== */
+.main-pad { padding: 0 28px 28px; }
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 0; gap: 16px; flex-wrap: wrap;
 }
-.memo-write textarea {
-  width: 100%; min-height: 64px; resize: vertical; line-height: 1.5;
+.toolbar-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: #0F172A; }
+.count-chip {
+  font-size: 12.5px; color: #1B4FB8; background: #E8F0FE;
+  padding: 3px 8px; border-radius: 999px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
-.memo-write textarea:focus, .memo-write select:focus,
-.feed-filters select:focus { outline: none; border-color: var(--green); }
-.memo-write-row { display: flex; gap: 8px; align-items: center; }
+.divider-v { height: 18px; width: 1px; background: #E5E8EC; }
+.seg-group {
+  display: flex; gap: 2px; padding: 3px; background: #F4F6F8; border-radius: 8px;
+}
+.seg-btn {
+  padding: 6px 12px; font-size: 12.5px; font-weight: 600;
+  color: #6B7280; border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid transparent;
+}
+.seg-btn:hover { color: #1E2530; }
+.seg-btn.active {
+  background: #fff; color: #0F172A; border-color: #D8DDE3;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.06);
+}
+.seg-btn .icon { font-size: 11px; }
+.dropdown { position: relative; }
+.dropdown-trigger {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 11px; font-size: 12.5px; font-weight: 600;
+  background: #fff; border: 1px solid #D8DDE3; border-radius: 8px;
+  color: #1E2530;
+}
+.dropdown-trigger .label { color: #6B7280; }
+.dropdown-trigger .caret { font-size: 9px; opacity: .6; }
+.dropdown-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;
+  background: #fff; border: 1px solid #E5E8EC; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15,23,42,0.08); padding: 4px; min-width: 140px;
+}
+.dropdown-menu button {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 10px; font-size: 12.5px; font-weight: 500;
+  color: #1E2530; border-radius: 6px;
+}
+.dropdown-menu button.active { background: #F4F8FF; font-weight: 700; }
+.dropdown-menu button:hover { background: #F4F6F8; }
 
-.feed-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+/* ===== LAYOUT GRID ===== */
+.list-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 20px; align-items: start;
+}
+.list-grid.full { grid-template-columns: 1fr; }
 
-.memo-feed-list { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; }
-.feed-item {
-  background: var(--bg); border-radius: var(--radius);
-  padding: 10px 12px; border-left: 3px solid var(--border2);
+/* ===== CARD VIEW ===== */
+.cards { display: grid; gap: 12px; padding: 4px 0; }
+.app-card {
+  background: #fff; border: 1px solid #E5E8EC; border-radius: 12px;
+  padding: 18px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1.5fr) minmax(0,0.8fr);
+  gap: 18px; align-items: stretch;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
 }
-.feed-item.tag-지역 { border-left-color: var(--blue); }
-.feed-item.tag-신규부모님 { border-left-color: var(--amber); }
-.feed-item.tag-재이용 { border-left-color: var(--green); }
-.feed-item.tag-응답속도 { border-left-color: var(--red); }
-.feed-item.tag-신청서 { border-left-color: var(--text3); }
-.feed-meta { display: flex; gap: 8px; font-size: 11px; color: var(--text3); margin-bottom: 4px; align-items: center; }
-.feed-meta .tag-pill {
-  background: var(--surface2); color: var(--text2);
-  padding: 1px 6px; border-radius: 99px; font-weight: 500;
+.app-card.selected {
+  border-color: #1B4FB8;
+  box-shadow: 0 0 0 3px rgba(27,79,184,0.12);
 }
-.feed-meta .source-pill {
-  font-family: var(--mono); color: var(--text2);
+.col-identity { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.id-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.id-name-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.id-name { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: #0F172A; }
+.id-tag {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 2px 6px; border-radius: 4px;
 }
-.feed-txt { font-size: 12px; line-height: 1.55; color: var(--text); }
+.id-tag.tag-new { background: #EEF1F4; color: #4B5563; }
+.id-tag.tag-rebook { background: #E4F5EA; color: #1F6B3C; }
+.id-child { font-size: 12.5px; color: #6B7280; }
+.id-body { font-size: 12.5px; color: #4B5563; line-height: 1.5; }
+.id-body .region { color: #6B7280; margin-top: 2px; }
 
-.insight-empty { font-size: 12px; color: var(--text3); padding: 16px 0; text-align: center; }
-.insight-loading { font-size: 12px; color: var(--text2); padding: 16px 0; text-align: center; }
+.col-rec {
+  background: #FAFBFC; border-radius: 10px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  border: 1px solid #EEF1F4;
+}
+.rec-head { display: flex; align-items: center; justify-content: space-between; }
+.section-label {
+  font-size: 10.5px; font-weight: 700; color: #6B7280;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.teacher-line { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.teacher-line .lbl { font-size: 10.5px; font-weight: 700; color: #6B7280; width: 34px; flex-shrink: 0; }
+.teacher-line .name { flex: 1; min-width: 0; font-size: 12.5px; color: #1E2530; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.teacher-line .name.empty { color: #9CA3AF; font-weight: 500; }
+.teacher-line .state-dot { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; flex-shrink: 0; }
+.teacher-line .state-dot .dot { width: 6px; height: 6px; border-radius: 999px; }
 
-.toplines { display: flex; flex-direction: column; gap: 4px; }
-.topline {
-  font-size: 12px; color: var(--text); padding: 6px 10px;
-  background: var(--surface2); border-radius: var(--radius);
+.col-priority {
+  display: flex; flex-direction: column; gap: 10px;
+  align-items: flex-end; justify-content: space-between;
 }
-.theme-list { display: flex; flex-direction: column; gap: 10px; }
-.theme-card {
-  border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 12px; background: var(--bg);
-}
-.theme-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.theme-title { font-size: 13px; font-weight: 600; }
-.theme-count {
-  font-size: 11px; background: var(--green-bg); color: var(--green-text);
-  padding: 2px 8px; border-radius: 99px; font-weight: 500;
-}
-.theme-summary { font-size: 12px; color: var(--text2); line-height: 1.55; margin-bottom: 6px; }
-.theme-action { font-size: 12px; color: var(--text); padding: 6px 8px; background: var(--surface); border-radius: var(--radius); }
-.theme-action strong { color: var(--green-text); margin-right: 4px; font-weight: 600; }
-.derive-meta { font-size: 11px; color: var(--text3); padding-top: 8px; border-top: 1px solid var(--border); margin-top: 8px; }
+.col-priority .top { width: 100%; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.owner-line { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #6B7280; }
+.action-row { display: flex; gap: 6px; }
 
-.history-list { display: flex; flex-direction: column; gap: 8px; }
-.history-item {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 10px 12px;
-  display: flex; justify-content: space-between; align-items: center;
+/* ===== ATOMIC: StatusBadge ===== */
+.status-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: -0.01em; line-height: 1;
 }
-.history-item-left { display: flex; flex-direction: column; gap: 2px; }
-.history-item-title { font-size: 12px; font-weight: 500; }
-.history-item-meta { font-size: 11px; color: var(--text3); }
+.status-badge.sm { padding: 3px 8px; font-size: 11px; }
+.status-badge .dot { width: 6px; height: 6px; border-radius: 999px; }
+.tone-blue { background: #E8F0FE; color: #1B4FB8; }
+.tone-blue .dot { background: #1B4FB8; }
+.tone-green { background: #E4F5EA; color: #1F6B3C; }
+.tone-green .dot { background: #1F6B3C; }
+.tone-orange { background: #FCE9DD; color: #B43F18; }
+.tone-orange .dot { background: #B43F18; }
+.tone-amber { background: #FDF0CC; color: #8A5B00; }
+.tone-amber .dot { background: #8A5B00; }
+.tone-red { background: #FBE0DC; color: #A4271A; }
+.tone-red .dot { background: #A4271A; }
+.tone-purple { background: #EDE7FB; color: #4634A8; }
+.tone-purple .dot { background: #4634A8; }
+.tone-slate { background: #EEF1F4; color: #4B5563; }
+.tone-slate .dot { background: #4B5563; }
+
+/* ===== RecPill ===== */
+.rec-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600; line-height: 1.1; white-space: nowrap;
+}
+.rec-pill.compact { padding: 4px 8px; font-size: 11.5px; }
+.rec-pill .glyph { font-size: 9px; line-height: 1; }
+.rec-pill .label { opacity: .7; font-weight: 500; }
+
+/* ===== DeadlineTag ===== */
+.dl-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.dl-tag .icon { font-size: 11px; }
+.dl-urgent { background: #FBE0DC; color: #A4271A; }
+.dl-soon { background: #FDF0CC; color: #8A5B00; }
+.dl-ok { background: #EEF1F4; color: #4B5563; }
+
+/* ===== ProbBar ===== */
+.prob-bar { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+.prob-bar.compact { min-width: 80px; }
+.prob-bar .track { flex: 1; height: 6px; background: #EEF1F4; border-radius: 999px; overflow: hidden; }
+.prob-bar .fill { height: 100%; border-radius: 999px; }
+.prob-bar .val { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 28px; text-align: right; }
+.prob-bar .val .pct { font-size: 10px; font-weight: 500; opacity: .7; }
+
+/* ===== ViewedBadge / Eye ===== */
+.viewed-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 7px; border-radius: 5px;
+  font-size: 11px; font-weight: 700; letter-spacing: -0.01em;
+  line-height: 1; white-space: nowrap;
+}
+.viewed-badge.sm { padding: 2px 6px; font-size: 10.5px; }
+.viewed-yes { background: #E4F5EA; color: #1F6B3C; }
+.viewed-no { background: #FBE0DC; color: #A4271A; }
+.viewed-summary {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 700; line-height: 1; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== TABLE VIEW ===== */
+.table-card {
+  background: #fff; border: 1px solid #E5E8EC; border-radius: 12px;
+  overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+.table-head {
+  display: grid; grid-template-columns: 120px 1.2fr 1fr 1.4fr 130px 110px 80px;
+  gap: 12px; padding: 10px 14px;
+  background: #FAFBFC; border-bottom: 1px solid #E5E8EC;
+  font-size: 10.5px; font-weight: 700; color: #6B7280;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.table-row {
+  display: grid; grid-template-columns: 120px 1.2fr 1fr 1.4fr 130px 110px 80px;
+  gap: 12px; padding: 14px 14px; align-items: center;
+  border-bottom: 1px solid #EEF1F4; cursor: pointer;
+  transition: background 100ms ease;
+}
+.table-row:last-child { border-bottom: none; }
+.table-row:hover { background: #FAFBFC; }
+.table-row.selected { background: #F4F8FF; }
+.tr-name { font-size: 14px; font-weight: 700; color: #0F172A; letter-spacing: -0.01em; }
+.tr-name .sub { color: #6B7280; font-weight: 500; }
+.tr-meta { font-size: 12px; color: #6B7280; margin-top: 2px; }
+.tr-recv { font-size: 11px; color: #9CA3AF; margin-top: 2px; }
+.compact-teacher { display: flex; align-items: center; gap: 6px; font-size: 11.5px; min-width: 0; }
+.compact-teacher .lbl-box {
+  width: 14px; height: 14px; border-radius: 4px; background: #EEF1F4; color: #6B7280;
+  font-size: 9.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.compact-teacher .nm { min-width: 0; flex: 1; color: #1E2530; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compact-teacher .nm.empty { color: #9CA3AF; }
+.compact-teacher .state { font-weight: 600; font-size: 11px; flex-shrink: 0; }
+.compact-teacher .eye { display: inline-flex; flex-shrink: 0; }
+
+/* ===== KANBAN ===== */
+.kanban { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kb-col {
+  background: #FAFBFC; border-radius: 12px; padding: 12px;
+  border: 1px solid #EEF1F4;
+  display: flex; flex-direction: column; gap: 10px; min-height: 240px;
+}
+.kb-col-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
+.kb-col-head .label { display: flex; align-items: center; gap: 8px; }
+.kb-col-head .label .dot { width: 8px; height: 8px; border-radius: 999px; }
+.kb-col-head .label .name { font-size: 12.5px; font-weight: 700; color: #1E2530; }
+.kb-col-head .count {
+  font-size: 11px; font-weight: 600; color: #6B7280;
+  background: #fff; padding: 2px 7px; border-radius: 999px; border: 1px solid #E5E8EC;
+}
+.kb-empty {
+  font-size: 11.5px; color: #9CA3AF; text-align: center; padding: 30px 8px;
+  border: 1px dashed #E5E8EC; border-radius: 8px;
+}
+.kb-card {
+  background: #fff; border-radius: 9px; padding: 13px;
+  border: 1px solid #E5E8EC; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+  cursor: pointer; display: flex; flex-direction: column; gap: 8px;
+}
+.kb-card.selected { border-color: #1B4FB8; box-shadow: 0 0 0 3px rgba(27,79,184,0.12); }
+.kb-card .header-row { display: flex; align-items: center; justify-content: space-between; }
+.kb-card .name { font-size: 14px; font-weight: 700; color: #0F172A; letter-spacing: -0.01em; }
+.kb-card .name .sub { color: #6B7280; font-size: 12px; font-weight: 500; }
+.kb-card .meta { font-size: 11.5px; color: #6B7280; margin-top: 2px; }
+.kb-card .rec-box {
+  display: flex; flex-direction: column; gap: 4px;
+  background: #FAFBFC; border-radius: 6px; padding: 8px 10px; border: 1px solid #EEF1F4;
+}
+.kb-card .footer { display: flex; align-items: center; justify-content: space-between; padding-top: 2px; font-size: 10.5px; color: #6B7280; }
+
+/* ===== DETAIL PANEL ===== */
+.detail-empty {
+  background: #FAFBFC; border: 1px dashed #E5E8EC; border-radius: 12px;
+  padding: 60px 24px; text-align: center; color: #9CA3AF; font-size: 13px;
+  position: sticky; top: 90px;
+}
+.detail-empty .ic { font-size: 22px; margin-bottom: 8px; opacity: .5; }
+.detail-panel {
+  background: #fff; border: 1px solid #E5E8EC; border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+  display: flex; flex-direction: column; overflow: hidden;
+  position: sticky; top: 90px; max-height: calc(100vh - 110px);
+}
+.dp-head {
+  padding: 16px 18px; border-bottom: 1px solid #EEF1F4;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+}
+.dp-head .id-line { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.dp-head .id { font-size: 11px; color: #9CA3AF; font-variant-numeric: tabular-nums; }
+.dp-head .name { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #0F172A; }
+.dp-head .name .sub { color: #6B7280; font-weight: 500; font-size: 14px; }
+.dp-head .sub-line { font-size: 12.5px; color: #6B7280; margin-top: 4px; }
+.dp-close { font-size: 18px; color: #9CA3AF; padding: 4px; line-height: 1; }
+.dp-body { padding: 18px; display: flex; flex-direction: column; gap: 18px; overflow: auto; }
+.dp-section { display: flex; flex-direction: column; gap: 10px; }
+.dp-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.kv { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.kv .k { font-size: 12px; color: #6B7280; }
+.kv .v { font-size: 12.5px; color: #1E2530; }
+.teacher-card {
+  background: #FAFBFC; border: 1px solid #EEF1F4; border-radius: 9px;
+  padding: 10px 12px; display: flex; align-items: center; gap: 10px;
+}
+.teacher-card .av {
+  width: 30px; height: 30px; border-radius: 999px;
+  background: #E8F0FE; color: #1B4FB8;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 12px; flex-shrink: 0;
+}
+.teacher-card .av.empty { background: #EEF1F4; color: #9CA3AF; }
+.teacher-card .body { flex: 1; min-width: 0; }
+.teacher-card .row1 { display: flex; align-items: center; gap: 6px; }
+.teacher-card .row1 .lbl { font-size: 11px; font-weight: 700; color: #6B7280; letter-spacing: 0.04em; }
+.teacher-card .nm { font-size: 13px; font-weight: 600; color: #1E2530; margin-top: 2px; }
+.teacher-card .nm.empty { color: #9CA3AF; }
+.teacher-card .note { font-size: 11.5px; color: #9CA3AF; margin-top: 2px; display: flex; gap: 6px; align-items: center; }
+.teacher-card .note .dim { opacity: .5; }
+.teacher-card .state-tag {
+  padding: 4px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; flex-shrink: 0;
+}
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-size: 11.5px; padding: 4px 9px; border-radius: 999px;
+  background: #EEF1F4; color: #4B5563; font-weight: 600;
+}
+.dp-foot {
+  padding: 14px; border-top: 1px solid #EEF1F4; background: #FAFBFC;
+  display: flex; gap: 8px;
+}
+.dp-foot .spacer { flex: 1; }
+
+/* ===== INSIGHT VIEW ===== */
+.insight-card {
+  background: #fff; border: 1px solid #E5E8EC; border-radius: 12px;
+  padding: 28px; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+.insight-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+.insight-head .sub { font-size: 12.5px; color: #6B7280; }
+.insight-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+@media (max-width: 900px) { .insight-grid { grid-template-columns: 1fr; } }
+.insight-block { border: 1px solid #EEF1F4; border-radius: 10px; padding: 16px; }
+.insight-block.gray { background: #FAFBFC; }
+.insight-block textarea {
+  width: 100%; min-height: 100px; padding: 12px;
+  border: 1px solid #E5E8EC; border-radius: 8px;
+  font-size: 13px; resize: vertical; outline: none; color: #1E2530;
+}
+.insight-block textarea:focus { border-color: #1B4FB8; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tag-chip {
+  font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 999px;
+  background: #F4F6F8; color: #4B5563; cursor: pointer;
+}
+.tag-chip.selected { background: #E8F0FE; color: #1B4FB8; }
+.empty-feed {
+  margin-top: 16px; padding: 14px;
+  border: 1px dashed #D8DDE3; border-radius: 8px;
+  color: #9CA3AF; font-size: 12.5px; text-align: center;
+}
+
+/* ===== AUTH PILL ===== */
+.data-source-pill {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 999px;
+  background: #EEF1F4; color: #4B5563;
+}
+.data-source-pill.live { background: #E4F5EA; color: #1F6B3C; }
+.auth-email { font-size: 11px; color: #6B7280; }
+
 </style>
 </head>
 <body>
-<div class="app">
 
-  <!-- TOPBAR -->
-  <div class="topbar">
+<div id="app">
+  <!-- HEADER -->
+  <header class="topbar">
     <div class="topbar-left">
-      <span class="brand">자란다 OPS</span>
+      <div class="brand-block">
+        <div class="brand-mark">자</div>
+        <div class="brand-name">자란다 <span class="sub">OPS</span></div>
+        <span class="beta-badge">BETA</span>
+      </div>
       <nav class="tabs">
-        <button class="tab active" data-page="matching" onclick="switchPage('matching')">매칭 신청서 관리</button>
-        <button class="tab" data-page="insight" onclick="switchPage('insight')">인사이트 도출</button>
+        <button class="btn-tab active" data-tab="matching" onclick="switchTab('matching')">매칭 신청서 관리</button>
+        <button class="btn-tab" data-tab="insight" onclick="switchTab('insight')">인사이트 도출</button>
       </nav>
     </div>
     <div class="topbar-right">
-      <span class="data-source-pill" id="data-source-pill" title="현재 데이터 출처">mock</span>
+      <span class="data-source-pill" id="data-source-pill">mock</span>
       <div id="g-signin-slot"></div>
-      <span class="topbar-meta" id="auth-email" style="display:none"></span>
-      <button class="btn" id="logout-btn" onclick="logout()" style="display:none">로그아웃</button>
-      <span class="topbar-meta" id="live-time"></span>
-      <button class="btn btn-primary" id="new-app-btn" onclick="alert('신규 신청서 등록 화면 (구현 예정)')">+ 신규 신청서</button>
+      <span class="auth-email" id="auth-email" style="display:none"></span>
+      <button class="btn btn-secondary btn-sm" id="logout-btn" onclick="logout()" style="display:none">로그아웃</button>
+      <div class="search-wrap">
+        <span class="icon">🔍</span>
+        <input id="search-input" placeholder="신청서·고객명 검색" oninput="onSearch(this.value)">
+      </div>
+      <button class="btn btn-secondary" onclick="loadLiveData(true)"><span class="icon">↻</span>새로고침</button>
+      <button class="btn btn-primary" onclick="alert('신규 신청서 등록 화면 (구현 예정)')"><span class="icon">＋</span>신규 신청서</button>
+      <div class="avatar" id="user-avatar">박</div>
     </div>
-  </div>
+  </header>
 
-  <div class="main">
-
-  <!-- ============== PAGE: MATCHING ============== -->
-  <section class="page page-matching" id="page-matching">
-
-    <!-- LIST PANEL -->
-    <div class="list-panel" id="list-panel">
-      <div class="list-header">
-        <div class="list-header-left">
-          <span style="font-size:13px;font-weight:600">전체 신청서</span>
-          <span class="list-count" id="list-count">5건</span>
-          <select class="filter-select" id="assignee-filter" onchange="filterByAssignee(this.value)">
-            <option value="">담당자 전체</option>
-          </select>
+  <main id="page-matching" class="main-pad">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="title">매칭 신청서</span>
+          <span class="count-chip" id="count-chip">전체 0건</span>
         </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn" onclick="sortBy('timer')">⏱ 취소임박순</button>
-          <button class="btn" onclick="sortBy('prob')">📊 확률높은순</button>
-          <button class="btn" onclick="sortBy('date')">🕐 접수순</button>
+        <div class="divider-v"></div>
+        <div class="dropdown">
+          <button class="dropdown-trigger" onclick="toggleOwnerDD(event)">
+            <span class="label">담당자</span>
+            <span id="owner-value">전체</span>
+            <span class="caret">▼</span>
+          </button>
+          <div class="dropdown-menu" id="owner-menu" style="display:none"></div>
+        </div>
+        <div class="seg-group" id="sort-seg">
+          <button class="seg-btn active" data-sort="urgent" onclick="setSort('urgent')"><span class="icon">⏱</span>취소 임박순</button>
+          <button class="seg-btn" data-sort="prob" onclick="setSort('prob')"><span class="icon">📈</span>확률 높은순</button>
+          <button class="seg-btn" data-sort="recent" onclick="setSort('recent')"><span class="icon">🕐</span>접수순</button>
         </div>
       </div>
-
-      <div class="row-strip-header">
-        <div class="rsh">신청서</div>
-        <div class="rsh">고객 이력</div>
-        <div class="rsh">추천 log</div>
-        <div class="rsh">선생님 1</div>
-        <div class="rsh">선생님 2</div>
-        <div class="rsh">추가 지원</div>
-        <div class="rsh">결과</div>
-        <div class="rsh">최근 액션</div>
+      <div class="toolbar-left" style="gap:10px">
+        <div class="seg-group" id="layout-seg">
+          <button class="seg-btn active" data-layout="card" onclick="setLayout('card')"><span class="icon">▭</span>카드</button>
+          <button class="seg-btn" data-layout="table" onclick="setLayout('table')"><span class="icon">≡</span>테이블</button>
+          <button class="seg-btn" data-layout="kanban" onclick="setLayout('kanban')"><span class="icon">▦</span>칸반</button>
+        </div>
+        <button class="btn btn-secondary" onclick="alert('내보내기 (구현 예정)')"><span class="icon">⤓</span>내보내기</button>
       </div>
-      <div class="rows-scroll">
-        <div class="data-rows" id="data-rows"></div>
-      </div>
-    </div>
-
-  </section>
-
-  <!-- ============== PAGE: INSIGHT ============== -->
-  <section class="page page-insight" id="page-insight">
-    <div class="insight-head">
-      <h2>인사이트 도출</h2>
-      <p>담당자 메모를 모아 LLM이 패턴·시사점을 도출합니다.</p>
     </div>
 
-    <div class="insight-grid">
+    <div class="list-grid" id="list-grid">
+      <div id="list-area"></div>
+      <div id="detail-area"></div>
+    </div>
+  </main>
 
-      <!-- LEFT: 메모 입력 + 피드 -->
-      <div>
-        <div class="card memo-write">
-          <div class="sec-lbl">메모 작성</div>
-          <div class="memo-write-row">
-            <select id="memo-author"></select>
-            <select id="memo-tag">
-              <option value="지역">지역</option>
-              <option value="신규부모님">신규부모님</option>
-              <option value="재이용">재이용</option>
-              <option value="응답속도">응답속도</option>
-              <option value="기타">기타</option>
-            </select>
-          </div>
-          <textarea id="memo-text" placeholder="떠오르는 생각, 패턴, 가설을 자유롭게 적어주세요..."></textarea>
-          <div style="display:flex;justify-content:flex-end">
-            <button class="btn btn-primary" onclick="addGlobalMemo()">메모 저장</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-            <div class="sec-lbl" style="margin:0">메모 피드 <span id="feed-count" style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0">· 0건</span></div>
-            <div class="feed-filters">
-              <select id="filter-author" onchange="renderMemoFeed()"><option value="">작성자 전체</option></select>
-              <select id="filter-tag" onchange="renderMemoFeed()">
-                <option value="">태그 전체</option>
-                <option value="지역">지역</option>
-                <option value="신규부모님">신규부모님</option>
-                <option value="재이용">재이용</option>
-                <option value="응답속도">응답속도</option>
-                <option value="신청서">신청서</option>
-                <option value="기타">기타</option>
-              </select>
-              <select id="filter-source" onchange="renderMemoFeed()">
-                <option value="">출처 전체</option>
-                <option value="자유">자유 메모</option>
-                <option value="신청서">신청서 메모</option>
-              </select>
-            </div>
-          </div>
-          <div class="memo-feed-list" id="memo-feed-list"></div>
-        </div>
+  <main id="page-insight" class="main-pad" style="display:none">
+    <div class="insight-card">
+      <div class="insight-head">
+        <span class="title">인사이트 도출</span>
+        <span class="sub">담당자 메모를 모아 패턴·시사점을 도출합니다</span>
       </div>
-
-      <!-- RIGHT: LLM 인사이트 -->
-      <div>
-        <div class="card">
-          <div class="sec-lbl">LLM 인사이트 도출</div>
-          <div style="font-size:12px;color:var(--text2);line-height:1.55">
-            현재 피드에 표시된 메모 <strong id="derive-count">0</strong>건을 묶어 테마 클러스터·핵심 인사이트·제안 액션을 생성합니다.
+      <div class="insight-grid">
+        <div class="insight-block">
+          <div class="section-label" style="margin-bottom:10px">메모 작성</div>
+          <textarea id="insight-memo" placeholder="이번 매칭에서 관찰한 패턴을 적어주세요"></textarea>
+          <div class="tag-chips">
+            <span class="tag-chip" onclick="toggleTag(this)">#지역</span>
+            <span class="tag-chip" onclick="toggleTag(this)">#신규부모님</span>
+            <span class="tag-chip" onclick="toggleTag(this)">#재이용</span>
+            <span class="tag-chip" onclick="toggleTag(this)">#응답속도</span>
+            <span class="tag-chip" onclick="toggleTag(this)">#기타</span>
           </div>
-          <div>
+          <div style="display:flex;justify-content:flex-end;margin-top:12px">
+            <button class="btn btn-primary" onclick="saveMemo()">메모 저장</button>
+          </div>
+        </div>
+        <div class="insight-block gray">
+          <div class="section-label" style="margin-bottom:10px">LLM 인사이트</div>
+          <div style="font-size:13.5px;color:#1E2530;line-height:1.55">
+            현재 피드의 메모 <b id="memo-count">0</b>건을 묶어 테마 클러스터·핵심 인사이트·제안 액션을 생성합니다.
+          </div>
+          <div style="margin-top:14px">
             <button class="btn btn-primary" onclick="deriveInsights()">인사이트 도출하기</button>
           </div>
-        </div>
-
-        <div class="card" id="insight-result">
-          <div class="insight-empty">메모를 모아 "인사이트 도출하기"를 눌러주세요.</div>
+          <div class="empty-feed" id="insight-result">메모를 모아 "인사이트 도출하기"를 눌러주세요.</div>
         </div>
       </div>
-
     </div>
-
-    <div class="insight-grid" style="grid-template-columns:1fr">
-      <div class="card">
-        <div class="sec-lbl">인사이트 히스토리</div>
-        <div class="history-list" id="history-list"></div>
-      </div>
-    </div>
-
-  </section>
-
-  </div>
+  </main>
 </div>
 
 <script>
-// ====== API + AUTH ======
+// ====== CONFIG ======
 const API_BASE = 'https://matching-ops-api-266295307740.asia-northeast3.run.app';
 const GOOGLE_CLIENT_ID = '266295307740-qq4ra3mgga9uv5e58pm5hag1pq668l6k.apps.googleusercontent.com';
 
+// ====== STATIC META (핸드오프 그대로) ======
+const STATUS_META = {
+  recommending: { label: '추천중', tone: 'blue' },
+  matched:      { label: '매칭 완료', tone: 'green' },
+  searching:    { label: '선생님 미정', tone: 'orange' },
+  review:       { label: '부모님 확인', tone: 'purple' },
+  cancelled:    { label: '취소', tone: 'red' },
+};
+const REC_STATE_META = {
+  accepted:  { label: '수락', tone: 'green', dot: '●' },
+  pending:   { label: '응답 대기', tone: 'amber', dot: '◐' },
+  waiting:   { label: '응답 대기', tone: 'amber', dot: '◐' },
+  declined:  { label: '거절', tone: 'red', dot: '○' },
+  backup:    { label: '백업', tone: 'slate', dot: '◌' },
+  searching: { label: '재탐색', tone: 'orange', dot: '◑' },
+  review:    { label: '검토중', tone: 'purple', dot: '◐' },
+};
+const TONE_FG = {
+  blue: '#1B4FB8', green: '#1F6B3C', orange: '#B43F18',
+  amber: '#8A5B00', red: '#A4271A', purple: '#4634A8', slate: '#4B5563',
+};
+
+// ====== MOCK DATA (핸드오프 APPLICATIONS 스키마) ======
+let APPS = [
+  {
+    id: 'SID-2418', parent: '김민서', parentTag: '신규', child: '지우', childAge: '초2',
+    region: '서울 마포구', subject: '수학', schedule: '주 2회 · 화/목 17:00',
+    receivedAt: '5/13 09:21', deadline: '오늘 18:00', deadlineState: 'urgent',
+    probability: 78, owner: '신진섭', status: '추천중', statusKey: 'recommending',
+    lastAction: '선생님 1 응답 대기 · 14분 전',
+    recommendation: {
+      stateKey: 'waiting',
+      t1: { name: '이수민 선생님', stateKey: 'accepted', note: '오후 5시 가능', viewed: true,  viewedAt: '5/13 13:42' },
+      t2: { name: '정유진 선생님', stateKey: 'pending',  note: '3시간 경과',  viewed: false, viewedAt: null },
+    },
+    history: { rebook: false, prevTeachers: 0, notes: '첫 매칭' },
+    extras: ['방문 수업', '여자 선생님 선호'], result: null,
+  },
+  {
+    id: 'SID-2419', parent: '장하늘', parentTag: '재이용', child: '서윤', childAge: '초4',
+    region: '서울 강서구', subject: '영어', schedule: '주 3회 · 월/수/금 16:30',
+    receivedAt: '5/13 10:02', deadline: '내일 12:00', deadlineState: 'soon',
+    probability: 91, owner: '김지윤', status: '매칭 완료', statusKey: 'matched',
+    lastAction: '선생님 1 수락 · 1시간 전',
+    recommendation: {
+      stateKey: 'accepted',
+      t1: { name: '한지호 선생님', stateKey: 'accepted', note: '이전 매칭 동일', viewed: true, viewedAt: '5/13 11:08' },
+      t2: { name: '최서아 선생님', stateKey: 'backup',   note: '대기 풀',       viewed: true, viewedAt: '5/13 11:09' },
+    },
+    history: { rebook: true, prevTeachers: 1, notes: '재이용 2회차' },
+    extras: ['기존 선생님 연장'], result: '성공',
+  },
+  {
+    id: 'SID-2420', parent: '윤서진', parentTag: '신규', child: '도윤', childAge: '초1',
+    region: '경기 성남시', subject: '독서·논술', schedule: '주 1회 · 토 10:00',
+    receivedAt: '5/12 18:44', deadline: '오늘 22:00', deadlineState: 'urgent',
+    probability: 42, owner: '노태효', status: '선생님 미정', statusKey: 'searching',
+    lastAction: '추천 후보 재탐색 · 30분 전',
+    recommendation: {
+      stateKey: 'searching',
+      t1: { name: '—', stateKey: 'declined', note: '스케줄 불가', viewed: false, viewedAt: null },
+      t2: { name: '—', stateKey: 'declined', note: '지역 불가',   viewed: false, viewedAt: null },
+    },
+    history: { rebook: false, prevTeachers: 0, notes: '응답 속도 느림' },
+    extras: ['주말 한정'], result: null,
+  },
+  {
+    id: 'SID-2421', parent: '송예린', parentTag: '재이용', child: '하준', childAge: '초3',
+    region: '서울 송파구', subject: '과학실험', schedule: '격주 · 일 14:00',
+    receivedAt: '5/12 11:10', deadline: '5/15 09:00', deadlineState: 'ok',
+    probability: 65, owner: '김성환', status: '추천중', statusKey: 'recommending',
+    lastAction: '선생님 2 수락 · 2시간 전',
+    recommendation: {
+      stateKey: 'accepted',
+      t1: { name: '오민재 선생님', stateKey: 'pending',  note: '확인 요청',  viewed: true,  viewedAt: '5/12 19:30' },
+      t2: { name: '신해린 선생님', stateKey: 'accepted', note: '전과목 가능', viewed: false, viewedAt: null },
+    },
+    history: { rebook: true, prevTeachers: 2, notes: '재이용 3회차' },
+    extras: ['남자 선생님 선호'], result: null,
+  },
+  {
+    id: 'SID-2422', parent: '노가람', parentTag: '신규', child: '라온', childAge: '유아7세',
+    region: '인천 연수구', subject: '한글·놀이', schedule: '주 2회 · 월/수 10:30',
+    receivedAt: '5/11 15:33', deadline: '5/16 18:00', deadlineState: 'ok',
+    probability: 58, owner: '이승석', status: '부모님 확인', statusKey: 'review',
+    lastAction: '추천서 전달 · 4시간 전',
+    recommendation: {
+      stateKey: 'review',
+      t1: { name: '권하영 선생님', stateKey: 'accepted', note: '유아 전문', viewed: true, viewedAt: '5/12 16:48' },
+      t2: { name: '배도현 선생님', stateKey: 'accepted', note: '근거리',   viewed: true, viewedAt: '5/12 17:02' },
+    },
+    history: { rebook: false, prevTeachers: 0, notes: '응답 빠름' },
+    extras: ['놀이형 수업'], result: null,
+  },
+];
+
+const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','강구슬'];
+
+// ====== STATE ======
+let state = {
+  tab: 'matching',
+  sort: 'urgent',
+  owner: '전체',
+  layout: 'card',
+  selectedId: APPS[0]?.id || null,
+  search: '',
+};
+
+// ====== AUTH ======
 let authToken = localStorage.getItem('mo-token') || '';
 let authEmail = localStorage.getItem('mo-email') || '';
 
 function setDataSource(src) {
   const pill = document.getElementById('data-source-pill');
-  if (!pill) return;
   pill.textContent = src;
   pill.classList.toggle('live', src === 'live');
 }
@@ -714,15 +680,18 @@ function updateAuthUI() {
   const slot = document.getElementById('g-signin-slot');
   const emailEl = document.getElementById('auth-email');
   const logoutBtn = document.getElementById('logout-btn');
+  const avatar = document.getElementById('user-avatar');
   if (authToken && authEmail) {
     slot.style.display = 'none';
     emailEl.style.display = '';
     emailEl.textContent = authEmail;
     logoutBtn.style.display = '';
+    if (avatar) avatar.textContent = (authEmail[0] || '?').toUpperCase();
   } else {
     slot.style.display = '';
     emailEl.style.display = 'none';
     logoutBtn.style.display = 'none';
+    if (avatar) avatar.textContent = '?';
     renderGoogleButton();
   }
 }
@@ -746,8 +715,7 @@ function renderGoogleButton() {
 async function handleGoogleCredential(response) {
   try {
     const r = await fetch(API_BASE + '/api/auth/google', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({credential: response.credential}),
     });
     if (!r.ok) {
@@ -756,8 +724,7 @@ async function handleGoogleCredential(response) {
       return;
     }
     const data = await r.json();
-    authToken = data.token;
-    authEmail = data.email;
+    authToken = data.token; authEmail = data.email;
     localStorage.setItem('mo-token', authToken);
     localStorage.setItem('mo-email', authEmail);
     updateAuthUI();
@@ -768,13 +735,11 @@ async function handleGoogleCredential(response) {
 }
 
 function logout() {
-  authToken = '';
-  authEmail = '';
+  authToken = ''; authEmail = '';
   localStorage.removeItem('mo-token');
   localStorage.removeItem('mo-email');
   updateAuthUI();
   setDataSource('mock');
-  // 페이지 새로고침해서 mock 데이터 복원
   location.reload();
 }
 
@@ -784,9 +749,7 @@ async function apiFetch(path) {
     headers: {'Authorization': 'Bearer ' + authToken},
   });
   if (r.status === 401) {
-    // 세션 만료 → 로그아웃
-    authToken = '';
-    authEmail = '';
+    authToken = ''; authEmail = '';
     localStorage.removeItem('mo-token');
     localStorage.removeItem('mo-email');
     updateAuthUI();
@@ -796,813 +759,513 @@ async function apiFetch(path) {
   return r.json();
 }
 
-// 라이브 데이터 로드 — 성공 시 ROWS 교체 + 재렌더, 실패/미인증 시 mock 유지
-async function loadLiveData() {
-  if (!authToken) {
-    setDataSource('mock');
-    return;
-  }
+// ====== DATA TRANSFORM (백엔드 → 핸드오프 APPLICATIONS 스키마) ======
+function backendToApp(r) {
+  // 학년·과목·접수 — sub에서 추출
+  const subParts = (r.sub || '').split('·').map(s => s.trim());
+  const grade = subParts[0] || '';
+  const subject = subParts[1] || r.policy || '';
+  let childAge = '';
+  const m = grade.match(/(\d)/);
+  if (grade.includes('초등')) childAge = '초' + (m ? m[1] : '');
+  else if (grade.includes('중')) childAge = '중' + (m ? m[1] : '');
+  else if (grade.includes('유아')) childAge = '유아';
+
+  // 핸드오프 statusKey 매핑
+  let statusKey = r.statusKey || 'recommending';
+  if (r.result === '성공') statusKey = 'matched';
+  else if (r.result === '실패') statusKey = 'cancelled';
+
+  // 추천 상태/선생님
+  const teachers = r.teachers || [];
+  const mapTeacher = (t) => {
+    if (!t) return { name: '—', stateKey: 'searching', note: '', viewed: false, viewedAt: null };
+    const sk = t.stat && t.stat.includes('확정') ? 'accepted'
+            : t.stat && t.stat.includes('수락') ? 'accepted'
+            : t.stat && t.stat.includes('응답완료') ? 'accepted'
+            : t.stat && t.stat.includes('백업') ? 'backup'
+            : t.stat && t.stat.includes('거절') ? 'declined'
+            : 'pending';
+    return {
+      name: t.name ? (t.name.endsWith('선생님') ? t.name : t.name + ' 선생님') : '—',
+      stateKey: sk, note: t.resp ? '응답 ' + t.resp : (t.stat || ''),
+      viewed: !!t.viewed, viewedAt: t.viewed ? '열람' : null,
+    };
+  };
+  const responded = teachers.filter(t => t.stat && (t.stat.includes('수락') || t.stat.includes('응답완료')));
+  const recStateKey = responded.length >= 1 ? 'accepted' : (teachers.length ? 'pending' : 'searching');
+
+  const parent = (r.title || '').split('·')[1] ? (r.title.split('·')[1].replace('학부모','').trim()) : '학부모';
+
+  return {
+    id: r.sid || r.key,
+    parent, parentTag: r.isNew === true ? '신규' : r.isNew === false ? '재이용' : '신규',
+    child: '—', childAge,
+    region: r.region || '',
+    subject, schedule: (r.requestChips && r.requestChips.length) ? r.requestChips.slice(0,2).join(' · ') : '—',
+    receivedAt: r.date || '',
+    deadline: r.deadlineLabel || '—',
+    deadlineState: r.deadlineState || 'ok',
+    probability: r.prob != null ? r.prob : 0,
+    owner: r.assignee || '—',
+    status: r.status || '', statusKey,
+    lastAction: '—',
+    recommendation: {
+      stateKey: recStateKey,
+      t1: mapTeacher(responded[0]),
+      t2: mapTeacher(responded[1]),
+    },
+    history: {
+      rebook: r.isNew === false,
+      prevTeachers: r.confirmedCount != null ? r.confirmedCount : 0,
+      notes: r.isNew === true ? '신규 가입' : (r.appCount ? `재이용 ${r.appCount}회차` : '재이용'),
+    },
+    extras: r.requestChips || [],
+    result: r.result === '성공' ? '성공' : r.result === '실패' ? '실패' : null,
+  };
+}
+
+async function loadLiveData(force) {
+  if (!authToken) { setDataSource('mock'); return; }
   try {
     const data = await apiFetch('/api/applications?limit=30');
     if (data && Array.isArray(data.rows) && data.rows.length > 0) {
-      // 백엔드 응답을 ROWS와 호환되도록 보강 (mock 전용 필드는 빈값으로)
-      const merged = data.rows.map(r => ({
-        teachers: [],
-        timeline: [],
-        memos: [],
-        info: [],
-        insightType: 'ok',
-        insightTitle: '실데이터 (replica)',
-        insightText: '운영 DB에서 가져온 실제 신청서입니다.',
-        prob: r.prob ?? 0,
-        // mock의 보조 필드
-        appCount: r.appCount ?? '—',
-        confirmedCount: r.confirmedCount ?? 0,
-        lessonCount: r.lessonCount ?? 0,
-        visitsAfter: r.visitsAfter ?? 0,
-        ...r,
-      }));
-      // 라이브 데이터로 ROWS 자체 교체 → 정렬·필터도 라이브 기준으로 작동
-      ROWS = merged;
-      merged.forEach(m => { if (!memoStore[m.key]) memoStore[m.key] = []; });
-      currentKey = null;
-      applyFilterSort();
+      APPS = data.rows.map(backendToApp);
+      // 담당자 dropdown 옵션 갱신
+      const owners = Array.from(new Set(APPS.map(a => a.owner).filter(Boolean)));
+      state.ownerOptions = owners;
+      // 첫 항목 선택
+      state.selectedId = APPS[0]?.id || null;
       setDataSource('live');
+      render();
     } else {
       setDataSource('mock');
     }
   } catch (e) {
-    console.warn('Live data fetch failed, fallback to mock:', e.message);
+    console.warn('Live data fetch failed, mock fallback:', e.message);
     setDataSource('mock');
   }
 }
 
-let ROWS = [
-  {
-    key:'A', sid:'SID-2847',
-    isNew:false, appCount:4, confirmedCount:3, lessonCount:12, visitsAfter:5, applyCount:3,
-    date:'05/14 09:12', status:'진행중', statusKey:'recommending',
-    deadlineState:'urgent', deadlineLabel:'1시간 23분 남음',
-    region:'서울 마포구',
-    requestChips:['매주','주 1회','여성 선생님 선호'],
-    requestedTeacherName:'',
-    assignee:'신진섭',
-    timerMin: 83, reqCount:5, confirmed:'—',
-    price:'시급 25,000원', request:'여성 선생님 선호 · 마포구 거주 우대',
-    prob:78, result:'—', resultType:'',
-    title:'SID-2847 · 김민지 학부모', sub:'초등 3학년 · 수학 · 서울 마포구 · 접수 05/14 09:12',
-    insightType:'ok',
-    insightTitle:'매칭 인사이트 · 확률 78%',
-    insightText:'이용 경험 3회 · 알림톡 수신 후 12분 내 접수. 과거 매칭 시 지역 근접 선생님 선호. 현재 응답 중인 선생님 2명 중 1명이 마포구 거주로 적합도 높음.',
-    info:[
-      ['담당자','신진섭'],['구분','재방문'],['알림 채널','카카오 알림톡'],
-      ['작성 회차','4번째'],['누적 확정','3회'],['누적 수업','12회'],
-      ['작성 후 앱 진입','5회'],['선생님 지원','2명 / 요청 4명'],
-      ['알림→접수','12분'],['접수→요청발송','8분'],['자동취소까지','1h 23m 남음'],['확정시간','—'],['총 소요시간','진행중']
-    ],
-    teachers:[
-      {init:'박',name:'박지훈',stat:'응답완료',resp:'13분',respColor:'var(--green)',viewed:true,totalHours:280,subject:'수학',subjectHours:95,rating:4.8,reviewCount:32},
-      {init:'이',name:'이서연',stat:'응답완료',resp:'23분',respColor:'var(--green)',viewed:false,totalHours:410,subject:'수학',subjectHours:180,rating:4.9,reviewCount:58},
-      {init:'김',name:'김서아',stat:'응답완료',resp:'25분',respColor:'var(--green)',viewed:true,totalHours:340,subject:'수학',subjectHours:145,rating:4.85,reviewCount:42},
-      {init:'최',name:'최민호',stat:'미응답',resp:'31분 경과',respColor:'var(--red)'},
-      {init:'정',name:'정수아',stat:'거절',resp:'—',respColor:'var(--text3)'},
-    ],
-    timeline:[
-      {dot:'#1D9E75',action:'알림톡 발송',time:'05/14 09:00',detail:'수업 요청 알림 발송'},
-      {dot:'#185FA5',action:'부모님앱 로그인',time:'05/14 09:08',detail:'iOS · 앱 v3.42.1 · 알림→로그인 8분'},
-      {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 09:12',detail:'반응 소요 12분'},
-      {dot:'#185FA5',action:'담당자 배정',time:'05/14 09:15',detail:'신진섭 배정'},
-      {dot:'#185FA5',action:'선생님 5명 요청 발송',time:'05/14 09:20',detail:'박지훈, 이서연, 김서아, 최민호, 정수아'},
-      {dot:'#1D9E75',action:'박지훈 수락',time:'05/14 09:33',detail:'응답 13분'},
-      {dot:'#1D9E75',action:'이서연 수락',time:'05/14 09:43',detail:'응답 23분'},
-      {dot:'#1D9E75',action:'김서아 수락',time:'05/14 09:45',detail:'응답 25분'},
-      {dot:'#A32D2D',action:'정수아 거절',time:'05/14 09:47',detail:''},
-      {dot:'#BA7517',action:'학부모 확인 대기중',time:'현재',detail:'수락 선생님 2명 대기'},
-    ],
-    memos:[{who:'신진섭 · 09:25',txt:'박지훈 선생님 마포구 거주 확인. 학부모 선호 조건 부합. 우선 추천 예정.'}]
-  },
-  {
-    key:'B', sid:'SID-2846',
-    isNew:true, appCount:1, confirmedCount:0, lessonCount:0, visitsAfter:1, applyCount:0,
-    date:'05/14 08:45', status:'진행중', statusKey:'review',
-    deadlineState:'urgent', deadlineLabel:'3시간 7분 남음',
-    region:'서울 서대문구',
-    requestChips:['매주','주 2회','원어민 발음'],
-    requestedTeacherName:'',
-    assignee:'김지윤',
-    timerMin: 187, reqCount:2, confirmed:'—',
-    price:'시급 28,000원', request:'주 2회 영어 회화 위주 · 원어민 발음',
-    prob:41, result:'—', resultType:'',
-    title:'SID-2846 · 이혜진 학부모', sub:'초등 5학년 · 영어 · 서울 서대문구 · 접수 05/14 08:45',
-    insightType:'warn',
-    insightTitle:'주의 · 확률 41%',
-    insightText:'신규 학부모 · 요청 보낸 선생님 2명 모두 미응답 30분 초과. 추가 발송 필요. 동일 과목·지역 가용 선생님 3명 남아있음.',
-    info:[
-      ['담당자','김지윤'],['이용기록','신규'],['알림 채널','푸시 알림'],
-      ['알림→접수','34분'],['접수→요청발송','15분'],['자동취소까지','3h 07m 남음'],['확정시간','—'],['총 소요시간','진행중']
-    ],
-    teachers:[
-      {init:'한',name:'한지원',stat:'미응답',resp:'42분 경과',respColor:'var(--red)'},
-      {init:'오',name:'오영민',stat:'미응답',resp:'38분 경과',respColor:'var(--red)'},
-    ],
-    timeline:[
-      {dot:'#1D9E75',action:'푸시 알림 발송',time:'05/14 08:11',detail:'수업 요청 알림'},
-      {dot:'#185FA5',action:'부모님앱 로그인',time:'05/14 08:38',detail:'Android · 앱 v3.41.2 · 알림→로그인 27분 (신규 가입 직후)'},
-      {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 08:45',detail:'반응 소요 34분'},
-      {dot:'#185FA5',action:'담당자 배정',time:'05/14 08:48',detail:'김지윤 배정'},
-      {dot:'#185FA5',action:'선생님 2명 요청 발송',time:'05/14 09:00',detail:'한지원, 오영민'},
-      {dot:'#BA7517',action:'미응답 30분 초과',time:'05/14 09:30',detail:'추가 발송 필요'},
-    ],
-    memos:[{who:'김지윤 · 09:35',txt:'두 분 모두 미응답. 추가 발송 대상 확인 중. 서대문구 가용 선생님 3명 더 있음.'}]
-  },
-  {
-    key:'C', sid:'SID-2845',
-    isNew:false, appCount:8, confirmedCount:7, lessonCount:38, visitsAfter:3, applyCount:2,
-    date:'05/14 07:30', status:'매칭완료', statusKey:'matched',
-    deadlineState:'ok', deadlineLabel:'완료',
-    region:'서울 강남구',
-    requestChips:['매주','주 2회','여성 선생님 선호'],
-    requestedTeacherName:'강서윤',
-    assignee:'노태효',
-    timerMin: null, reqCount:3, confirmed:'11:04',
-    price:'시급 30,000원', request:'재이용 · 30대 여성 선생님 선호',
-    prob:91, result:'성공', resultType:'ok',
-    title:'SID-2845 · 최은영 학부모', sub:'초등 2학년 · 영어 · 서울 강남구 · 접수 05/14 07:30',
-    insightType:'ok',
-    insightTitle:'매칭 완료 · 성공 이유',
-    insightText:'이용 7회 재이용 고객. 과거 선호 선생님 스타일(여성·30대·영어 전공) 부합. 요청 3명 중 가장 빠르게 응답한 선생님으로 확정. 접수→확정 3h 34m.',
-    info:[
-      ['담당자','노태효'],['이용기록','7회 (재이용)'],['알림 채널','카카오 알림톡'],
-      ['알림→접수','8분'],['접수→요청발송','6분'],['자동취소까지','—'],['확정시간','05/14 11:04'],['총 소요시간','3h 34m']
-    ],
-    teachers:[
-      {init:'강',name:'강서윤',stat:'수락 → 확정',resp:'7분',respColor:'var(--green)',viewed:true,totalHours:520,subject:'영어',subjectHours:220,rating:4.95,reviewCount:71},
-      {init:'윤',name:'윤다인',stat:'수락 (미선택)',resp:'11분',respColor:'var(--text2)',viewed:true,totalHours:95,subject:'영어',subjectHours:40,rating:4.6,reviewCount:12},
-      {init:'장',name:'장현우',stat:'거절',resp:'—',respColor:'var(--text3)'},
-    ],
-    timeline:[
-      {dot:'#1D9E75',action:'알림톡 발송',time:'05/14 07:22',detail:''},
-      {dot:'#185FA5',action:'부모님앱 로그인',time:'05/14 07:27',detail:'iOS · 앱 v3.42.1 · 알림→로그인 5분 (재이용 고객)'},
-      {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 07:30',detail:'반응 소요 8분'},
-      {dot:'#185FA5',action:'선생님 3명 요청 발송',time:'05/14 07:36',detail:'강서윤, 윤다인, 장현우'},
-      {dot:'#1D9E75',action:'강서윤 수락',time:'05/14 07:43',detail:'응답 7분'},
-      {dot:'#1D9E75',action:'윤다인 수락',time:'05/14 07:47',detail:'응답 11분'},
-      {dot:'#A32D2D',action:'장현우 거절',time:'05/14 07:50',detail:''},
-      {dot:'#1D9E75',action:'학부모 강서윤 확정',time:'05/14 11:04',detail:'접수→확정 3h 34m'},
-    ],
-    memos:[
-      {who:'노태효 · 07:40',txt:'7회 재이용. 과거 여성 선생님 선호 이력 있어 강서윤 우선 노출.'},
-      {who:'노태효 · 11:10',txt:'강서윤 선생님으로 확정 완료. 학부모 응대 만족도 높았음.'},
-    ]
-  },
-  {
-    key:'D', sid:'SID-2844',
-    isNew:true, appCount:1, confirmedCount:0, lessonCount:0, visitsAfter:0, applyCount:0,
-    date:'05/13 16:20', status:'취소', statusKey:'cancelled',
-    deadlineState:'ok', deadlineLabel:'취소됨',
-    region:'경기 고양시',
-    requestChips:['매주','주 1회','초보 가능'],
-    requestedTeacherName:'',
-    assignee:'김성환',
-    timerMin: null, reqCount:1, confirmed:'—',
-    price:'시급 26,000원', request:'초보 선생님 가능 · 고양시 거주 우대',
-    prob:29, result:'실패', resultType:'fail',
-    title:'SID-2844 · 정미경 학부모', sub:'중학교 1학년 · 수학 · 경기 고양시 · 접수 05/13 16:20',
-    insightType:'danger',
-    insightTitle:'매칭 실패 · 원인 분석',
-    insightText:'신규 학부모 · 요청 1명 발송 후 자동취소. 가용 선생님 수 부족(해당 지역 2명). 알림 발송 후 학부모 미확인 24h 초과. 추가 알림 시도가 필요했음.',
-    info:[
-      ['담당자','김성환'],['이용기록','신규'],['알림 채널','이메일'],
-      ['알림→접수','2h 10분'],['접수→요청발송','22분'],['자동취소까지','—'],['확정시간','—'],['총 소요시간','자동취소']
-    ],
-    teachers:[
-      {init:'송',name:'송재희',stat:'미응답 → 만료',resp:'—',respColor:'var(--red)'},
-    ],
-    timeline:[
-      {dot:'#BA7517',action:'이메일 알림 발송',time:'05/13 14:10',detail:''},
-      {dot:'#BA7517',action:'부모님앱 로그인',time:'05/13 16:12',detail:'웹 · 알림→로그인 2h 02분 (느린 반응)'},
-      {dot:'#BA7517',action:'학부모 신청서 접수',time:'05/13 16:20',detail:'반응 소요 2h 10분'},
-      {dot:'#185FA5',action:'선생님 1명 요청 발송',time:'05/13 16:42',detail:'송재희'},
-      {dot:'#A32D2D',action:'송재희 미응답',time:'05/13 17:42',detail:'1시간 경과 무응답'},
-      {dot:'#A32D2D',action:'자동취소 처리',time:'05/14 00:00',detail:'가용 선생님 소진'},
-    ],
-    memos:[{who:'김성환 · 17:45',txt:'고양시 가용 선생님 1명뿐이었음. 미응답으로 추가 발송 불가. 지역 커버리지 개선 필요.'}]
-  },
-  {
-    key:'E', sid:'SID-2843',
-    isNew:false, appCount:2, confirmedCount:1, lessonCount:4, visitsAfter:2, applyCount:0,
-    date:'05/13 14:50', status:'미배정', statusKey:'searching',
-    deadlineState:'soon', deadlineLabel:'6시간 40분 남음',
-    region:'서울 동작구',
-    requestChips:['격주','주 1회','실험 위주'],
-    requestedTeacherName:'',
-    assignee:'이승석',
-    timerMin: 400, reqCount:0, confirmed:'—',
-    price:'시급 27,000원', request:'동작구 근처 거주 선생님 · 실험 위주 수업',
-    prob:55, result:'—', resultType:'',
-    title:'SID-2843 · 한지선 학부모', sub:'초등 4학년 · 과학 · 서울 동작구 · 접수 05/13 14:50',
-    insightType:'warn',
-    insightTitle:'주의 · 확률 55%',
-    insightText:'1회 이용 학부모. 아직 선생님 요청 미발송 상태. 6h 40m 내 처리 필요. 해당 지역·과목 가용 선생님 5명 확인됨.',
-    info:[
-      ['담당자','이승석'],['이용기록','1회'],['알림 채널','앱 배너'],
-      ['알림→접수','45분'],['접수→요청발송','—'],['자동취소까지','6h 40m 남음'],['확정시간','—'],['총 소요시간','진행중']
-    ],
-    teachers:[],
-    timeline:[
-      {dot:'#1D9E75',action:'앱 배너 노출',time:'05/13 14:05',detail:''},
-      {dot:'#185FA5',action:'부모님앱 로그인',time:'05/13 14:43',detail:'iOS · 앱 v3.41.8 · 노출→로그인 38분'},
-      {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/13 14:50',detail:'반응 소요 45분'},
-      {dot:'#185FA5',action:'담당자 배정',time:'05/13 14:55',detail:'이승석 배정'},
-      {dot:'#BA7517',action:'요청 발송 대기중',time:'현재',detail:'선생님 선택 전'},
-    ],
-    memos:[]
+// ====== ATOMIC COMPONENTS ======
+function statusBadge(statusKey, size) {
+  const m = STATUS_META[statusKey];
+  if (!m) return '';
+  const sz = size === 'sm' ? 'sm' : '';
+  return `<span class="status-badge ${sz} tone-${m.tone}"><span class="dot"></span>${m.label}</span>`;
+}
+
+function recPill(stateKey, name, compact) {
+  const m = REC_STATE_META[stateKey];
+  if (!m) return '';
+  return `<span class="rec-pill ${compact?'compact':''} tone-${m.tone}">
+    <span class="glyph">${m.dot}</span>
+    ${name?`<span>${name}</span>`:''}
+    <span class="label">${m.label}</span>
+  </span>`;
+}
+
+function dlTag(deadline, stateKey) {
+  const cls = stateKey === 'urgent' ? 'dl-urgent' : stateKey === 'soon' ? 'dl-soon' : 'dl-ok';
+  return `<span class="dl-tag ${cls}"><span class="icon">⏱</span>${deadline}</span>`;
+}
+
+function probBar(value, compact) {
+  const tone = value >= 75 ? '#1F6B3C' : value >= 55 ? '#1B4FB8' : '#B43F18';
+  return `<div class="prob-bar ${compact?'compact':''}">
+    <div class="track"><div class="fill" style="width:${value}%;background:${tone}"></div></div>
+    <span class="val" style="color:${tone}">${value}<span class="pct">%</span></span>
+  </div>`;
+}
+
+function eyeIcon(viewed, size) {
+  size = size || 12;
+  if (viewed) {
+    return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none">
+      <path d="M1.5 8 C 3.3 4.4 5.6 3 8 3 C 10.4 3 12.7 4.4 14.5 8 C 12.7 11.6 10.4 13 8 13 C 5.6 13 3.3 11.6 1.5 8 Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+      <circle cx="8" cy="8" r="2.2" fill="currentColor"/>
+    </svg>`;
   }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none">
+    <path d="M1.5 8 C 3.3 4.4 5.6 3 8 3 C 10.4 3 12.7 4.4 14.5 8 C 12.7 11.6 10.4 13 8 13 C 5.6 13 3.3 11.6 1.5 8 Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" opacity="0.55"/>
+    <line x1="2.5" y1="13.5" x2="13.5" y2="2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function viewedBadge(viewed, viewedAt, size) {
+  const cls = viewed ? 'viewed-yes' : 'viewed-no';
+  const sz = size === 'sm' ? 'sm' : '';
+  const title = viewed ? `부모님 열람 · ${viewedAt||''}` : '부모님 미열람';
+  return `<span class="viewed-badge ${sz} ${cls}" title="${title}">${eyeIcon(viewed, size==='sm'?10:11)}${viewed?'열람':'미열람'}</span>`;
+}
+
+function viewedSummary(rec) {
+  const ts = [rec.t1, rec.t2].filter(t => t && t.name && t.name !== '—');
+  const total = ts.length;
+  if (total === 0) return '';
+  const viewed = ts.filter(t => t.viewed).length;
+  const all = viewed === total;
+  const none = viewed === 0;
+  const cls = all ? 'viewed-yes' : none ? 'viewed-no' : '';
+  const style = !all && !none ? 'background:#FDF0CC;color:#8A5B00' : '';
+  return `<span class="viewed-summary ${cls}" style="${style}" title="부모님이 선생님 프로필을 열람한 수">${eyeIcon(!none, 11)}프로필 ${viewed}/${total}</span>`;
+}
+
+// ====== VIEWS ======
+function teacherLineCard(label, t) {
+  const meta = REC_STATE_META[t.stateKey] || REC_STATE_META.pending;
+  const hasName = t.name && t.name !== '—';
+  return `<div class="teacher-line">
+    <div class="lbl">${label}</div>
+    <div class="name ${hasName?'':'empty'}">${hasName ? t.name : '후보 없음'}</div>
+    ${hasName ? viewedBadge(t.viewed, t.viewedAt, 'sm') : ''}
+    <div class="state-dot" style="color:${TONE_FG[meta.tone]}"><span class="dot" style="background:${TONE_FG[meta.tone]}"></span>${meta.label}</div>
+  </div>`;
+}
+
+function renderCardView(apps) {
+  return `<div class="cards">${apps.map(a => `
+    <div class="app-card ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
+      <div class="col-identity">
+        <div class="id-badges">
+          ${statusBadge(a.statusKey)}
+          ${dlTag(a.deadline, a.deadlineState)}
+          ${viewedSummary(a.recommendation)}
+        </div>
+        <div class="id-name-row">
+          <span class="id-name">${a.parent}</span>
+          <span class="id-tag ${a.parentTag==='재이용'?'tag-rebook':'tag-new'}">${a.parentTag}</span>
+          <span class="id-child">· ${a.child}(${a.childAge||'—'})</span>
+        </div>
+        <div class="id-body">
+          <div>${a.subject} · ${a.schedule}</div>
+          <div class="region">${a.region} · ${a.id}</div>
+        </div>
+      </div>
+      <div class="col-rec">
+        <div class="rec-head">
+          <div class="section-label">선생님 추천</div>
+          ${recPill(a.recommendation.stateKey, null, true)}
+        </div>
+        ${teacherLineCard('1지망', a.recommendation.t1)}
+        ${teacherLineCard('2지망', a.recommendation.t2)}
+      </div>
+      <div class="col-priority">
+        <div class="top">
+          <div class="section-label">매칭 확률</div>
+          ${probBar(a.probability)}
+        </div>
+        <div class="owner-line">
+          <span class="avatar gray">${(a.owner||'?')[0]}</span>${a.owner}
+        </div>
+        <div class="action-row">
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();selectApp('${a.id}')">상세</button>
+          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();alert('액션 (구현 예정)')">액션</button>
+        </div>
+      </div>
+    </div>
+  `).join('')}</div>`;
+}
+
+function compactTeacher(label, t) {
+  const meta = REC_STATE_META[t.stateKey] || REC_STATE_META.pending;
+  const hasName = t.name && t.name !== '—';
+  const eyeFg = hasName ? (t.viewed ? '#1F6B3C' : '#A4271A') : '#9CA3AF';
+  return `<div class="compact-teacher">
+    <span class="lbl-box">${label}</span>
+    <span class="nm ${hasName?'':'empty'}">${hasName ? t.name : '없음'}</span>
+    ${hasName ? `<span class="eye" style="color:${eyeFg}" title="${t.viewed?'부모님 열람':'미열람'}">${eyeIcon(t.viewed, 11)}</span>` : ''}
+    <span class="state" style="color:${TONE_FG[meta.tone]}">${meta.label}</span>
+  </div>`;
+}
+
+function renderTableView(apps) {
+  return `<div class="table-card">
+    <div class="table-head">
+      <div>상태</div><div>신청 정보</div><div>마감 / 접수</div>
+      <div>선생님 추천</div><div>매칭 확률</div><div>담당자</div><div></div>
+    </div>
+    ${apps.map(a => `
+      <div class="table-row ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
+        <div>${statusBadge(a.statusKey, 'sm')}</div>
+        <div style="min-width:0">
+          <div class="tr-name">${a.parent} <span class="sub">· ${a.child}(${a.childAge||'—'})</span></div>
+          <div class="tr-meta">${a.subject} · ${a.region}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${dlTag(a.deadline, a.deadlineState)}
+          <div class="tr-recv">접수 ${a.receivedAt}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+          ${compactTeacher('1', a.recommendation.t1)}
+          ${compactTeacher('2', a.recommendation.t2)}
+        </div>
+        <div>${probBar(a.probability, true)}</div>
+        <div style="font-size:12.5px;color:#4B5563;display:flex;align-items:center;gap:6px">
+          <span class="avatar gray">${(a.owner||'?')[0]}</span>${a.owner}
+        </div>
+        <div style="text-align:right">
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();selectApp('${a.id}')">열기 →</button>
+        </div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+const KANBAN_COLS = [
+  { key: 'recommending', label: '추천중', tone: 'blue' },
+  { key: 'review', label: '부모님 확인', tone: 'purple' },
+  { key: 'searching', label: '선생님 미정', tone: 'orange' },
+  { key: 'matched', label: '매칭 완료', tone: 'green' },
 ];
 
-const memoStore = {};
-ROWS.forEach(r => { memoStore[r.key] = [...r.memos]; });
-
-let currentKey = null;
-let currentFilter = '';
-let currentSort = 'date';
-let sortedRows = [...ROWS];
-
-function timerClass(min) {
-  if (min === null) return 'timer-none';
-  if (min < 120) return 'timer-r';
-  if (min < 240) return 'timer-a';
-  return 'timer-g';
-}
-
-function timerLabel(min) {
-  if (min === null) return '—';
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-function probColor(p) {
-  if (p >= 70) return '#1D9E75';
-  if (p >= 45) return '#BA7517';
-  return '#A32D2D';
-}
-
-function statusBdg(status) {
-  const map = {
-    '진행중':'bdg-진행','매칭완료':'bdg-완료','취소':'bdg-취소','미배정':'bdg-미배정'
-  };
-  return `<span class="bdg ${map[status]||''}">${status}</span>`;
-}
-
-function renderTable() {
-  const container = document.getElementById('data-rows');
-  container.innerHTML = sortedRows.map(r => {
-    const isActive = currentKey === r.key;
-
-    const responded = r.teachers.filter(t =>
-      t.stat.includes('수락') || t.stat.includes('응답완료')
-    );
-    const slot1 = responded[0] || null;
-    const slot2 = responded[1] || null;
-    const extraCount = Math.max(0, responded.length - 2);
-
-    const renderTeacherSlot = (t) => {
-      if (!t) return `<div class="rcard rcard-teacher empty"></div>`;
-      const statColor = t.respColor==='var(--green)' ? 'rc-stat-ok'
-                      : t.respColor==='var(--red)' ? 'rc-stat-bad'
-                      : 'rc-stat-mute';
-      const viewedHTML = (t.viewed !== undefined)
-        ? `<span class="viewed-pill ${t.viewed?'on':'off'}">${t.viewed?'프로필 봤음':'안봤음'}</span>`
-        : '';
-      return `
-        <div class="rcard rcard-teacher">
-          <div class="rc-row-flex">
-            <span class="rc-title">${t.name}</span>
-            ${viewedHTML}
-          </div>
-          <div class="${statColor}" style="font-size:11px">${t.stat} · 응답 ${t.resp}</div>
-          ${t.rating ? `<div class="rc-meta">★${t.rating} · ${t.subject} ${t.subjectHours}h · 후기 ${t.reviewCount}</div>` : ''}
+function renderKanbanView(apps) {
+  return `<div class="kanban">${KANBAN_COLS.map(col => {
+    const list = apps.filter(a => a.statusKey === col.key);
+    return `<div class="kb-col">
+      <div class="kb-col-head">
+        <div class="label">
+          <span class="dot" style="background:${TONE_FG[col.tone]}"></span>
+          <span class="name">${col.label}</span>
         </div>
-      `;
-    };
-
-    const slot1HTML = renderTeacherSlot(slot1);
-    const slot2HTML = renderTeacherSlot(slot2);
-    const extraHTML = extraCount > 0
-      ? `<div class="rcard rcard-more">+${extraCount}명</div>`
-      : `<div class="rcard rcard-more zero">—</div>`;
-
-    const memoCount = (memoStore[r.key] || []).length;
-    const lastTl = r.timeline[r.timeline.length-1];
-
-    const subShort = r.sub.split('·').slice(0, 3).join('·').trim();
-    const region = r.sub.split('·')[2]?.trim() || '';
-
-    const mainRow = `
-      <div class="data-row${isActive?' active':''}" id="row-${r.key}" onclick="toggleDetail('${r.key}')">
-
-        <div class="rcard rcard-app">
-          <div class="rc-row-flex">
-            <span class="rc-title">${r.sid}</span>
-            ${r.deadlineLabel ? `<span class="dl-tag dl-${r.deadlineState||'ok'}">⏱ ${r.deadlineLabel}</span>` : ''}
-          </div>
-          <div class="rc-sub">${r.sub.split('·')[0].trim()} · ${r.sub.split('·')[1]?.trim()||''}</div>
-          <div class="rc-meta">${r.region || region} · 접수 ${r.date}</div>
-          ${(r.requestChips && r.requestChips.length) ? `<div class="rc-chips">${r.requestChips.slice(0,3).map(c => `<span class="rc-chip">${c}</span>`).join('')}</div>` : ''}
-        </div>
-
-        <div class="rcard rcard-history">
-          <div class="rc-row-flex">
-            <span class="bdg bdg-${r.isNew?'신규':'이용'}">${r.isNew?'신규':'재방문'}</span>
-            <span class="rc-num">작성 ${r.appCount}번째</span>
-          </div>
-          <div class="rc-meta">확정 <span class="${r.confirmedCount>0?'rc-num':'rc-num-mute'}">${r.confirmedCount}회</span> · 수업 <span class="${r.lessonCount>0?'rc-num':'rc-num-mute'}">${r.lessonCount}회</span></div>
-          <div class="rc-meta">작성 후 앱 진입 <span class="${r.visitsAfter>0?'rc-num':'rc-num-mute'}">${r.visitsAfter}회</span></div>
-        </div>
-
-        <div class="rcard rcard-rec">
-          <div class="rc-title" style="font-size:11px">${r.assignee}</div>
-          <div class="rc-meta">요청 <span class="rc-num">${r.reqCount}명</span></div>
-          <div class="rc-meta">지원 <span class="${r.applyCount>0?'rc-num':'rc-num-mute'}">${r.applyCount}명</span></div>
-          ${r.requestedTeacherName ? `<div class="rc-meta">지명 <span class="rc-num">${r.requestedTeacherName}</span></div>` : ''}
-        </div>
-
-        ${slot1HTML}
-        ${slot2HTML}
-        ${extraHTML}
-
-        <div class="rcard rcard-result">
-          <div>${statusBdg(r.status)}</div>
-          <div class="rc-meta">자동취소 <span class="timer ${timerClass(r.timerMin)}">${timerLabel(r.timerMin)}</span></div>
-          <div class="rc-row-flex" style="font-size:10px">
-            <div class="prob-bar" style="width:36px"><div class="prob-fill" style="width:${r.prob}%;background:${probColor(r.prob)}"></div></div>
-            <span style="color:${probColor(r.prob)};font-weight:500">${r.prob}%</span>
-            ${r.result!=='—' ? `<span style="color:${r.resultType==='ok'?'var(--green-text)':'var(--red-text)'};font-weight:500">· ${r.result}</span>` : ''}
-          </div>
-        </div>
-
-        <div class="rcard rcard-action">
-          <div class="rc-title" style="font-size:11px">${lastTl.action}</div>
-          <div class="rc-meta">${lastTl.time}${lastTl.detail?' · '+lastTl.detail.slice(0,16):''}</div>
-          <div class="rc-meta">메모 <span class="${memoCount>0?'rc-num':'rc-num-mute'}">${memoCount}건</span></div>
-        </div>
-
+        <span class="count">${list.length}</span>
       </div>
-    `;
-    const detailBlock = isActive ? `<div class="detail-block">${buildDetailHTML(r)}</div>` : '';
-    return mainRow + detailBlock;
-  }).join('');
-}
-
-function buildDetailHTML(d) {
-  const iMap = {ok:'',warn:'warn',danger:'danger'};
-  const memos = memoStore[d.key] || [];
-
-  const subParts = d.sub.split('·').map(s => s.trim());
-  const grade = subParts[0] || '';
-  const subject = subParts[1] || '';
-  const region = subParts[2] || '';
-
-  const responded = d.teachers.filter(t =>
-    t.stat.includes('수락') || t.stat.includes('응답완료')
-  );
-
-  const timelineHTML = d.timeline.map((t,i) => {
-    const isSub = t.action.includes('부모님앱 로그인');
-    return `
-    <div class="tl-item${isSub?' sub':''}">
-      <div class="tl-dot-col">
-        <div class="tl-dot" style="background:${t.dot}"></div>
-        ${i < d.timeline.length-1 ? '<div class="tl-line"></div>' : ''}
-      </div>
-      <div class="tl-content">
-        <div class="tl-action">${t.action}</div>
-        <div class="tl-time">${t.time}</div>
-        ${t.detail ? `<div class="tl-detail">${t.detail}</div>` : ''}
-      </div>
-    </div>
-  `;}).join('');
-
-  const teacherCardsHTML = responded.length === 0
-    ? '<div class="no-teacher">지원·수락한 선생님이 아직 없습니다.</div>'
-    : `<div class="teacher-cards-grid">${responded.map(t => `
-        <div class="teacher-card">
-          <div class="tc-header">
-            <div class="tc-avatar" style="background:${t.respColor==='var(--green)'?'var(--green-bg)':'var(--gray-bg)'};color:${t.respColor==='var(--green)'?'var(--green-text)':'var(--gray-text)'}">${t.init}</div>
-            <div class="tc-name-block">
-              <div class="tc-name">${t.name}</div>
-              <div class="tc-stat">${t.stat} · 응답 ${t.resp}</div>
-            </div>
-            <span class="viewed-pill ${t.viewed?'on':'off'}">${t.viewed?'프로필 봤음':'안봤음'}</span>
+      ${list.length === 0 ? '<div class="kb-empty">건이 없습니다</div>' : ''}
+      ${list.map(a => `
+        <div class="kb-card ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
+          <div class="header-row">
+            ${dlTag(a.deadline, a.deadlineState)}
+            ${viewedSummary(a.recommendation)}
           </div>
-          ${t.totalHours ? `
-            <div class="tc-stats">
-              <div class="tc-stat-item">
-                <div class="tc-stat-lbl">총 수업시간</div>
-                <div class="tc-stat-val">${t.totalHours}h</div>
-              </div>
-              <div class="tc-stat-item">
-                <div class="tc-stat-lbl">${t.subject} 수업시간</div>
-                <div class="tc-stat-val">${t.subjectHours}h</div>
-              </div>
-              <div class="tc-stat-item">
-                <div class="tc-stat-lbl">부모님 평점</div>
-                <div class="tc-stat-val"><span class="star">★</span>${t.rating}</div>
-              </div>
-              <div class="tc-stat-item">
-                <div class="tc-stat-lbl">후기</div>
-                <div class="tc-stat-val">${t.reviewCount}건</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:6px">
-              <button class="btn" onclick="event.stopPropagation();alert('${t.name} 프로필 보기 (구현 예정)')">프로필 보기</button>
-            </div>
-          ` : ''}
-        </div>
-      `).join('')}</div>`;
-
-  const memosHTML = memos.length === 0
-    ? '<div class="memo-empty">아직 메모가 없습니다.</div>'
-    : memos.map(m => `<div class="memo-item"><div class="memo-who">${m.who}</div><div class="memo-txt">${m.txt}</div></div>`).join('');
-
-  const sidNum = d.sid.replace('SID-','');
-  const originalLink = `https://japi.jaranda.kr/applications/${sidNum}`;
-
-  return `
-    <div class="detail-inline" onclick="event.stopPropagation()">
-      <div class="dp-header">
-        <div class="dp-header-top">
           <div>
-            <div class="dp-title">${d.title}</div>
-            <div class="dp-sub">${d.sub}</div>
+            <div class="name">${a.parent} <span class="sub">· ${a.child}</span></div>
+            <div class="meta">${a.subject} · ${a.region}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            ${statusBdg(d.status)}
-            <a class="link-original" href="${originalLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">원본 신청서 ↗</a>
-            <button class="btn-close" onclick="event.stopPropagation();toggleDetail('${d.key}')" aria-label="닫기">×</button>
+          <div class="rec-box">
+            ${compactTeacher('1', a.recommendation.t1)}
+            ${compactTeacher('2', a.recommendation.t2)}
           </div>
-        </div>
-      </div>
-
-      <div class="insight-box ${iMap[d.insightType]}">
-        <div class="insight-lbl">${d.insightTitle}</div>
-        <div class="insight-txt">${d.insightText}</div>
-      </div>
-
-      <div class="dp-section">
-        <div class="detail-4-cards">
-          <div class="dcard">
-            <div class="dcard-title">신청서 기본</div>
-            <div class="info-row"><span class="info-key">학년·과목</span><span class="info-val">${grade} · ${subject}</span></div>
-            <div class="info-row"><span class="info-key">지역</span><span class="info-val">${d.region || region || '—'}</span></div>
-            <div class="info-row"><span class="info-key">예상 단가</span><span class="info-val">${d.price||'—'}</span></div>
-            <div class="info-row"><span class="info-key">접수일시</span><span class="info-val">${d.date}</span></div>
-            ${d.requestedTeacherName ? `<div class="info-row"><span class="info-key">지명 선생님</span><span class="info-val">${d.requestedTeacherName}</span></div>` : ''}
-            ${(d.requestChips && d.requestChips.length) ? `
-              <div class="info-row" style="align-items:flex-start"><span class="info-key">조건</span><span class="info-val rc-chips">${d.requestChips.map(c=>`<span class="rc-chip">${c}</span>`).join('')}</span></div>
-            ` : ''}
-            ${d.request ? `
-              <div class="info-row" style="flex-direction:column;align-items:flex-start;gap:4px"><span class="info-key">요청사항</span><span class="info-val" style="white-space:pre-wrap;color:var(--text)">${d.request}</span></div>
-            ` : ''}
-          </div>
-
-          <div class="dcard">
-            <div class="dcard-title">고객 이력</div>
-            <div class="info-row"><span class="info-key">구분</span><span class="info-val">${d.isNew===true?'신규':d.isNew===false?'재방문':'—'}</span></div>
-            <div class="info-row"><span class="info-key">작성 회차</span><span class="info-val">${d.appCount!=null?d.appCount+'번째':'<span class="ph">집계 예정</span>'}</span></div>
-            <div class="info-row"><span class="info-key">누적 확정</span><span class="info-val">${d.confirmedCount!=null?d.confirmedCount+'회':'<span class="ph">집계 예정</span>'}</span></div>
-            <div class="info-row"><span class="info-key">누적 수업</span><span class="info-val">${d.lessonCount!=null?d.lessonCount+'회':'<span class="ph">집계 예정</span>'}</span></div>
-            <div class="info-row"><span class="info-key">작성 후 앱 진입</span><span class="info-val">${d.visitsAfter!=null?d.visitsAfter+'회':'<span class="ph">이벤트 연동 예정</span>'}</span></div>
-          </div>
-
-          <div class="dcard">
-            <div class="dcard-title">매칭 진행</div>
-            <div class="info-row"><span class="info-key">담당자</span><span class="info-val">${d.assignee}</span></div>
-            <div class="info-row"><span class="info-key">마감까지</span><span class="info-val">${d.deadlineLabel||timerLabel(d.timerMin)} ${d.deadlineState?`<span class="dl-tag dl-${d.deadlineState}" style="margin-left:6px">${d.deadlineState==='urgent'?'임박':d.deadlineState==='soon'?'주의':'여유'}</span>`:''}</span></div>
-            <div class="info-row"><span class="info-key">요청 발송</span><span class="info-val">${d.reqCount}명</span></div>
-            <div class="info-row"><span class="info-key">지원 수락</span><span class="info-val">${d.applyCount}명</span></div>
-            <div class="info-row"><span class="info-key">매칭 확률</span><span class="info-val">${d.prob!=null?`<span style="color:${probColor(d.prob)};font-weight:600">${d.prob}%</span>`:'<span class="ph">LLM 예측 예정</span>'}</span></div>
-            <div class="info-row"><span class="info-key">확정시간</span><span class="info-val">${d.confirmed}</span></div>
-            ${d.matchedTeacher ? `<div class="info-row"><span class="info-key">매칭된 선생님</span><span class="info-val">${d.matchedTeacher}</span></div>` : ''}
-          </div>
-
-          <div class="dcard">
-            <div class="dcard-title">액션 타임라인</div>
-            <div class="timeline">${timelineHTML || '<div class="ph">타임라인 데이터 연결 예정</div>'}</div>
+          <div class="footer">
+            ${probBar(a.probability, true)}
+            <span>${a.owner}</span>
           </div>
         </div>
-      </div>
+      `).join('')}
+    </div>`;
+  }).join('')}</div>`;
+}
 
-      <div class="dp-section">
-        <div class="sec-lbl">지원한 선생님 (${responded.length}명)</div>
-        ${teacherCardsHTML}
+// ====== DETAIL PANEL ======
+function teacherDetail(label, t) {
+  const meta = REC_STATE_META[t.stateKey] || REC_STATE_META.pending;
+  const hasName = t.name && t.name !== '—';
+  return `<div class="teacher-card">
+    <span class="av ${hasName?'':'empty'}">${hasName ? t.name[0] : '?'}</span>
+    <div class="body">
+      <div class="row1">
+        <span class="lbl">${label}</span>
+        ${hasName ? `<span class="viewed-badge sm ${t.viewed?'viewed-yes':'viewed-no'}">${eyeIcon(t.viewed, 10)}${t.viewed?'부모님 열람':'미열람'}</span>` : ''}
       </div>
-
-      <div class="action-btns">
-        <button class="btn btn-primary" onclick="event.stopPropagation();confirmTeacher('${d.key}')">부모님께 확정 알림톡 발송</button>
-        <button class="btn" onclick="event.stopPropagation();alert('추가 알림 발송 (구현 예정)')">추가 알림 발송</button>
-      </div>
-
-      <div class="memo-area">
-        <div class="sec-lbl">담당자 메모</div>
-        <div class="memo-list">${memosHTML}</div>
-        <div class="memo-input-row">
-          <textarea id="memo-input-${d.key}" placeholder="이 신청서에 대한 메모를 남겨주세요..." onclick="event.stopPropagation()"></textarea>
-          <button class="btn-save" onclick="event.stopPropagation();addMemoInline('${d.key}')">저장</button>
-        </div>
+      <div class="nm ${hasName?'':'empty'}">${hasName ? t.name : '후보 없음'}</div>
+      <div class="note">
+        <span>${t.note||''}</span>
+        ${hasName && t.viewed && t.viewedAt ? `<span class="dim">·</span><span style="color:#6B7280">${t.viewedAt} 열람</span>` : ''}
       </div>
     </div>
+    <div class="state-tag tone-${meta.tone}">${meta.label}</div>
+  </div>`;
+}
+
+function renderDetailPanel(app) {
+  if (!app) {
+    return `<div class="detail-empty">
+      <div class="ic">📋</div>
+      신청서를 선택하면<br>상세 정보가 표시됩니다
+    </div>`;
+  }
+  return `<aside class="detail-panel">
+    <div class="dp-head">
+      <div>
+        <div class="id-line">
+          ${statusBadge(app.statusKey)}
+          <span class="id">${app.id}</span>
+        </div>
+        <div class="name">${app.parent} <span class="sub">· ${app.child}(${app.childAge||'—'})</span></div>
+        <div class="sub-line">${app.subject} · ${app.schedule}</div>
+      </div>
+      <button class="dp-close" onclick="selectApp(null)">×</button>
+    </div>
+    <div class="dp-body">
+
+      <div class="dp-section">
+        <div class="dp-section-head">
+          <div class="section-label">선생님 추천</div>
+          <div style="display:inline-flex;gap:6px;align-items:center">
+            ${viewedSummary(app.recommendation)}
+            ${recPill(app.recommendation.stateKey, null, true)}
+          </div>
+        </div>
+        ${teacherDetail('1지망', app.recommendation.t1)}
+        ${teacherDetail('2지망', app.recommendation.t2)}
+        <button class="btn btn-secondary btn-sm" onclick="alert('백업 후보 추가 (구현 예정)')"><span class="icon">＋</span>백업 후보 추가</button>
+      </div>
+
+      <div class="dp-section">
+        <div class="section-label">우선순위 / 마감</div>
+        <div class="kv"><span class="k">마감</span><span class="v">${dlTag(app.deadline, app.deadlineState)}</span></div>
+        <div class="kv"><span class="k">매칭 확률</span><span class="v">${probBar(app.probability, true)}</span></div>
+        <div class="kv"><span class="k">접수</span><span class="v" style="color:#4B5563;font-variant-numeric:tabular-nums">${app.receivedAt}</span></div>
+        <div class="kv"><span class="k">담당자</span><span class="v">${app.owner}</span></div>
+      </div>
+
+      <div class="dp-section">
+        <div class="section-label">고객 이력</div>
+        <div class="kv"><span class="k">유형</span><span class="v"><span class="id-tag ${app.parentTag==='재이용'?'tag-rebook':'tag-new'}">${app.parentTag}</span></span></div>
+        <div class="kv"><span class="k">이전 선생님</span><span class="v">${app.history.prevTeachers ?? 0}명</span></div>
+        <div class="kv"><span class="k">메모</span><span class="v" style="color:#4B5563">${app.history.notes || '—'}</span></div>
+      </div>
+
+      <div class="dp-section">
+        <div class="section-label">추가 요청</div>
+        <div class="chip-list">
+          ${(app.extras||[]).length ? app.extras.map(x => `<span class="chip">${x}</span>`).join('') : '<span style="color:#9CA3AF;font-size:12px">없음</span>'}
+        </div>
+      </div>
+
+      <div class="dp-section">
+        <div class="section-label">최근 액션</div>
+        <div style="font-size:12.5px;color:#4B5563;line-height:1.6">${app.lastAction || '—'}</div>
+      </div>
+
+    </div>
+    <div class="dp-foot">
+      <button class="btn btn-secondary" onclick="alert('메모 (구현 예정)')">메모</button>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" onclick="alert('부모님께 전달 (구현 예정)')">부모님께 전달</button>
+    </div>
+  </aside>`;
+}
+
+// ====== APP STATE & RENDER ======
+function getApps() {
+  let list = APPS.slice();
+  if (state.owner !== '전체') list = list.filter(a => a.owner === state.owner);
+  if (state.search) {
+    const s = state.search.toLowerCase();
+    list = list.filter(a => (a.parent||'').includes(state.search) || (a.id||'').toLowerCase().includes(s) || (a.child||'').includes(state.search));
+  }
+  if (state.sort === 'urgent') {
+    const order = { urgent: 0, soon: 1, ok: 2 };
+    list.sort((a,b) => (order[a.deadlineState]??9) - (order[b.deadlineState]??9));
+  } else if (state.sort === 'prob') {
+    list.sort((a,b) => b.probability - a.probability);
+  } else {
+    list.sort((a,b) => (a.receivedAt||'').localeCompare(b.receivedAt||''));
+  }
+  return list;
+}
+
+function render() {
+  const apps = getApps();
+  document.getElementById('count-chip').textContent = `전체 ${apps.length}건`;
+
+  const grid = document.getElementById('list-grid');
+  const listArea = document.getElementById('list-area');
+  const detailArea = document.getElementById('detail-area');
+
+  if (state.layout === 'kanban') {
+    grid.classList.add('full');
+    detailArea.style.display = 'none';
+    listArea.innerHTML = renderKanbanView(apps);
+  } else {
+    grid.classList.remove('full');
+    detailArea.style.display = '';
+    if (state.layout === 'table') listArea.innerHTML = renderTableView(apps);
+    else listArea.innerHTML = renderCardView(apps);
+
+    const sel = apps.find(a => a.id === state.selectedId) || APPS.find(a => a.id === state.selectedId) || null;
+    detailArea.innerHTML = renderDetailPanel(sel);
+  }
+}
+
+function selectApp(id) { state.selectedId = id; render(); }
+function setSort(key) {
+  state.sort = key;
+  document.querySelectorAll('#sort-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === key));
+  render();
+}
+function setLayout(key) {
+  state.layout = key;
+  document.querySelectorAll('#layout-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.layout === key));
+  render();
+}
+function onSearch(v) { state.search = v.trim(); render(); }
+
+function switchTab(t) {
+  state.tab = t;
+  document.querySelectorAll('.tabs .btn-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  document.getElementById('page-matching').style.display = t === 'matching' ? '' : 'none';
+  document.getElementById('page-insight').style.display = t === 'insight' ? '' : 'none';
+}
+
+// ====== OWNER DROPDOWN ======
+function toggleOwnerDD(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('owner-menu');
+  const isOpen = menu.style.display !== 'none';
+  if (isOpen) { menu.style.display = 'none'; return; }
+  const options = ['전체', ...ASSIGNEES, ...(state.ownerOptions||[]).filter(o => !ASSIGNEES.includes(o) && o !== '—')];
+  menu.innerHTML = options.map(o => `<button class="${o===state.owner?'active':''}" onclick="setOwner('${o.replace(/'/g,"\\'")}')">${o}</button>`).join('');
+  menu.style.display = '';
+}
+function setOwner(o) {
+  state.owner = o;
+  document.getElementById('owner-value').textContent = o;
+  document.getElementById('owner-menu').style.display = 'none';
+  render();
+}
+document.addEventListener('click', () => {
+  const m = document.getElementById('owner-menu');
+  if (m) m.style.display = 'none';
+});
+
+// ====== INSIGHT TAB ======
+let selectedTags = new Set();
+function toggleTag(el) {
+  const t = el.textContent;
+  if (selectedTags.has(t)) { selectedTags.delete(t); el.classList.remove('selected'); }
+  else { selectedTags.add(t); el.classList.add('selected'); }
+}
+let memoCount = 0;
+function saveMemo() {
+  const txt = document.getElementById('insight-memo').value.trim();
+  if (!txt) return;
+  memoCount++;
+  document.getElementById('memo-count').textContent = memoCount;
+  document.getElementById('insight-memo').value = '';
+  selectedTags.clear();
+  document.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
+}
+function deriveInsights() {
+  const el = document.getElementById('insight-result');
+  el.style.padding = '14px';
+  el.style.border = '1px solid #EEF1F4';
+  el.style.background = '#fff';
+  el.style.color = '#1E2530';
+  el.style.textAlign = 'left';
+  el.innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px">핵심 인사이트 (mock)</div>
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px;line-height:1.55">
+      <div style="padding:8px 10px;background:#F4F8FF;border-radius:6px">• 메모 빈도 1위: 지역 가용성 (마포구·고양시 권역 동시 발견)</div>
+      <div style="padding:8px 10px;background:#FDF0CC;border-radius:6px;color:#8A5B00">• 미응답 30분 초과 → 자동 추가 발송 룰 의견 반복</div>
+      <div style="padding:8px 10px;background:#E4F5EA;border-radius:6px;color:#1F6B3C">• 재이용 7회 이상 고객 매칭 성공률 90%+</div>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:#9CA3AF">분석 모델: Claude (mock) · 입력 메모 ${memoCount}건</div>
   `;
 }
 
-function confirmTeacher(key, teacherName) {
-  const d = ROWS.find(r => r.key === key);
-  if (!d) return;
-  const responded = d.teachers.filter(t => t.stat.includes('수락') || t.stat.includes('응답완료'));
-  if (teacherName) {
-    alert(`[${d.sid}] 부모님께 "${teacherName} 선생님 확정 요청" 알림톡 발송 (구현 예정)`);
-  } else if (responded.length === 0) {
-    alert('지원·수락한 선생님이 없습니다.');
-  } else {
-    const list = responded.map(t => t.name).join(', ');
-    alert(`[${d.sid}] 부모님께 지원 선생님 ${responded.length}명(${list}) 중 선택 요청 알림톡 발송 (구현 예정)`);
-  }
-}
-
-function applyFilterSort() {
-  let rows = [...ROWS];
-  if (currentFilter) {
-    rows = rows.filter(r => r.assignee === currentFilter);
-  }
-  if (currentSort === 'timer') {
-    rows.sort((a,b) => {
-      if (a.timerMin === null && b.timerMin === null) return 0;
-      if (a.timerMin === null) return 1;
-      if (b.timerMin === null) return -1;
-      return a.timerMin - b.timerMin;
-    });
-  } else if (currentSort === 'prob') {
-    rows.sort((a,b) => b.prob - a.prob);
-  }
-  sortedRows = rows;
-  document.getElementById('list-count').textContent = `${rows.length}건`;
-  renderTable();
-}
-
-function sortBy(type) {
-  currentSort = type;
-  applyFilterSort();
-}
-
-function filterByAssignee(value) {
-  currentFilter = value;
-  applyFilterSort();
-}
-
-const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','강구슬'];
-
-// ====== GLOBAL MEMOS (인사이트 페이지) ======
-const globalMemos = [
-  {id: 'g1', who: '신진섭', ts: '05/14 09:50', tag: '지역',
-   txt: '마포구 가용 선생님 추가 모집 필요. 최근 3건 중 2건이 지역 매칭으로 시간 지연.'},
-  {id: 'g2', who: '김지윤', ts: '05/14 09:55', tag: '신규부모님',
-   txt: '신규 학부모는 알림 후 30분 이상 미접속 비율이 높음. 푸시 외 카카오 알림톡 백업 필요.'},
-  {id: 'g3', who: '노태효', ts: '05/14 11:15', tag: '재이용',
-   txt: '재이용 7회 이상 고객은 90% 이상 매칭 성공. 우선순위 큐로 분리하면 담당자 손이 덜 가도 됨.'},
-  {id: 'g4', who: '강구슬', ts: '05/13 17:30', tag: '응답속도',
-   txt: '미응답 30분 초과 시 자동 추가 발송 룰이 있으면 좋겠다. 야간 시간대 특히 필요.'},
-  {id: 'g5', who: '김성환', ts: '05/13 18:00', tag: '지역',
-   txt: '고양시 권역도 가용 인력 1명뿐. 직거래 의심 케이스 일부 발견 — 별도 추적 필요.'},
-];
-
-const INSIGHT_HISTORY = [
-  {title: '주차별 거절 사유 클러스터링', ts: '2026-05-08 17:32', memos: 22, themes: 4},
-  {title: '신규 학부모 알림 채널별 반응속도', ts: '2026-04-30 14:10', memos: 15, themes: 3},
-];
-
-const INSIGHT_MOCK = {
-  toplines: [
-    '메모 빈도 1위: 지역 가용성 (2건) — 마포구·고양시 권역 동시 발견',
-    '제안 액션 우선순위: 신규 학부모 알림 채널 다각화 (Impact 高)',
-    '관찰: 미응답 30분 초과 → 자동 추가 발송 룰 의견 반복 등장',
-  ],
-  themes: [
-    {
-      title: '지역 가용성 부족',
-      count: 2,
-      summary: '마포구·고양시 등 일부 지역에서 가용 선생님 부족으로 매칭 실패·지연 반복. 직거래 의심 케이스도 같은 권역에서 포착됨.',
-      action: '지역별 선생님 풀 현황 점검 → 부족 지역 모집 캠페인 + 직거래 모니터링 강화',
-    },
-    {
-      title: '신규 부모님 알림 반응 지연',
-      count: 1,
-      summary: '신규 학부모의 알림 → 로그인 평균 27~45분으로 길고, 이메일 채널은 2시간 이상. 푸시 단독 채널의 한계.',
-      action: '신규 가입자는 카카오 알림톡 우선 + 30분 미반응 시 자동 SMS 백업 채널 전환',
-    },
-    {
-      title: '재이용 고객 매칭 성공률 ↑',
-      count: 1,
-      summary: '재이용 7회 이상 고객은 매칭 성공률 90%+. 담당자 개입 없이도 매칭이 빠르게 종결되는 경향.',
-      action: '재이용 횟수 기반 자동 처리 룰 검토 (담당자 배정 자동화 / SLA 단축)',
-    },
-    {
-      title: '미응답 자동 추가 발송 룰 부재',
-      count: 1,
-      summary: '담당자가 수동으로 추가 발송을 모니터링 — 야간/주말에 누락 가능성. 룰 기반 자동화 의견 반복.',
-      action: '미응답 30분 초과 시 가용 선생님 1명 자동 추가 발송 (최대 2회) PoC',
-    },
-  ],
-};
-
-// ====== PAGE SWITCH ======
-function switchPage(page) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
-  document.getElementById('page-matching').style.display = (page === 'matching') ? 'flex' : 'none';
-  document.getElementById('page-insight').classList.toggle('active', page === 'insight');
-  document.getElementById('new-app-btn').style.display = (page === 'matching') ? '' : 'none';
-  if (page === 'insight') {
-    populateInsightFilters();
-    renderMemoFeed();
-    renderInsightHistory();
-  }
-}
-
-function populateInsightFilters() {
-  const author = document.getElementById('memo-author');
-  if (author && author.options.length <= 1) {
-    author.innerHTML = ASSIGNEES.map(a => `<option value="${a}">${a}</option>`).join('');
-  }
-  const fauthor = document.getElementById('filter-author');
-  if (fauthor && fauthor.options.length <= 1) {
-    fauthor.innerHTML = '<option value="">작성자 전체</option>' +
-      ASSIGNEES.map(a => `<option value="${a}">${a}</option>`).join('');
-  }
-}
-
-function buildIntegratedFeed() {
-  const feed = globalMemos.map(m => ({...m, source: '자유', sourceLabel: '자유 메모'}));
-  Object.entries(memoStore).forEach(([key, memos]) => {
-    const row = ROWS.find(r => r.key === key);
-    const sid = row ? row.sid : '';
-    memos.forEach((m, i) => {
-      const parts = m.who.split('·').map(s => s.trim());
-      feed.push({
-        id: `${key}-${i}`,
-        who: parts[0] || '',
-        ts: parts[1] || '',
-        tag: '신청서',
-        txt: m.txt,
-        source: '신청서',
-        sourceLabel: sid,
-      });
-    });
-  });
-  feed.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-  return feed;
-}
-
-function renderMemoFeed() {
-  const fAuthor = document.getElementById('filter-author').value;
-  const fTag = document.getElementById('filter-tag').value;
-  const fSource = document.getElementById('filter-source').value;
-  let feed = buildIntegratedFeed();
-  if (fAuthor) feed = feed.filter(f => f.who === fAuthor);
-  if (fTag) feed = feed.filter(f => f.tag === fTag);
-  if (fSource) feed = feed.filter(f => f.source === fSource);
-
-  document.getElementById('feed-count').textContent = `· ${feed.length}건`;
-  document.getElementById('derive-count').textContent = feed.length;
-
-  const el = document.getElementById('memo-feed-list');
-  if (feed.length === 0) {
-    el.innerHTML = '<div class="insight-empty">조건에 맞는 메모가 없습니다.</div>';
-    return;
-  }
-  el.innerHTML = feed.map(f => `
-    <div class="feed-item tag-${f.tag}">
-      <div class="feed-meta">
-        <strong style="color:var(--text)">${f.who || '익명'}</strong>
-        <span>${f.ts || ''}</span>
-        <span class="tag-pill">${f.tag}</span>
-        <span class="source-pill">${f.sourceLabel}</span>
-      </div>
-      <div class="feed-txt">${f.txt}</div>
-    </div>
-  `).join('');
-}
-
-function addGlobalMemo() {
-  const who = document.getElementById('memo-author').value;
-  const tag = document.getElementById('memo-tag').value;
-  const ta = document.getElementById('memo-text');
-  const txt = ta.value.trim();
-  if (!txt) return;
-  const now = new Date();
-  const mm = String(now.getMonth()+1).padStart(2,'0');
-  const dd = String(now.getDate()).padStart(2,'0');
-  const hh = String(now.getHours()).padStart(2,'0');
-  const mi = String(now.getMinutes()).padStart(2,'0');
-  globalMemos.unshift({
-    id: 'g' + Date.now(),
-    who, tag,
-    ts: `${mm}/${dd} ${hh}:${mi}`,
-    txt,
-  });
-  ta.value = '';
-  renderMemoFeed();
-}
-
-function deriveInsights() {
-  const el = document.getElementById('insight-result');
-  el.innerHTML = '<div class="insight-loading">메모 분석 중...</div>';
-  setTimeout(() => {
-    const totalMemos = document.getElementById('derive-count').textContent;
-    el.innerHTML = `
-      <div class="sec-lbl">핵심 인사이트</div>
-      <div class="toplines">
-        ${INSIGHT_MOCK.toplines.map(t => `<div class="topline">• ${t}</div>`).join('')}
-      </div>
-      <div class="sec-lbl" style="margin-top:6px">테마 클러스터</div>
-      <div class="theme-list">
-        ${INSIGHT_MOCK.themes.map(t => `
-          <div class="theme-card">
-            <div class="theme-header">
-              <div class="theme-title">${t.title}</div>
-              <span class="theme-count">${t.count}건</span>
-            </div>
-            <div class="theme-summary">${t.summary}</div>
-            <div class="theme-action"><strong>제안 액션</strong> ${t.action}</div>
-          </div>
-        `).join('')}
-      </div>
-      <div class="derive-meta">도출 시각: ${new Date().toLocaleString('ko-KR')} · 분석 모델: Claude (mock) · 입력 메모 ${totalMemos}건</div>
-    `;
-    INSIGHT_HISTORY.unshift({
-      title: '메모 클러스터링 (자동)',
-      ts: new Date().toLocaleString('ko-KR'),
-      memos: parseInt(totalMemos, 10) || 0,
-      themes: INSIGHT_MOCK.themes.length,
-    });
-    renderInsightHistory();
-  }, 700);
-}
-
-function renderInsightHistory() {
-  const el = document.getElementById('history-list');
-  if (!el) return;
-  el.innerHTML = INSIGHT_HISTORY.map(h => `
-    <div class="history-item">
-      <div class="history-item-left">
-        <div class="history-item-title">${h.title}</div>
-        <div class="history-item-meta">${h.ts} · 메모 ${h.memos}건 · 테마 ${h.themes}개</div>
-      </div>
-      <button class="btn" onclick="alert('과거 인사이트 다시 보기 (구현 예정)')">보기</button>
-    </div>
-  `).join('');
-}
-
-function renderAssigneeFilter() {
-  const sel = document.getElementById('assignee-filter');
-  sel.innerHTML = '<option value="">담당자 전체</option>' +
-    ASSIGNEES.map(a => `<option value="${a}">${a}</option>`).join('');
-}
-
-function toggleDetail(key) {
-  currentKey = (currentKey === key) ? null : key;
-  renderTable();
-  if (currentKey) {
-    const row = document.getElementById('row-' + key);
-    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-}
-
-function addMemoInline(key) {
-  const ta = document.getElementById('memo-input-' + key);
-  if (!ta) return;
-  const txt = ta.value.trim();
-  if (!txt) return;
-  const now = new Date();
-  const hm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
-  const assigneeMap = {A:'신진섭',B:'김지윤',C:'노태효',D:'김성환',E:'이승석'};
-  if (!memoStore[key]) memoStore[key] = [];
-  memoStore[key].push({ who: `${assigneeMap[key]} · ${hm}`, txt });
-  renderTable();
-}
-
-function updateTime() {
-  const now = new Date();
-  document.getElementById('live-time').textContent =
-    now.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'}) + ' ' +
-    now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-}
-
-renderAssigneeFilter();
-renderTable();
-updateTime();
-setInterval(updateTime, 30000);
-
-// 인증 UI + 라이브 데이터 시도 (토큰 있으면 실데이터, 없으면 mock 유지)
+// ====== INIT ======
+render();
 updateAuthUI();
 if (authToken) loadLiveData();
 </script>
