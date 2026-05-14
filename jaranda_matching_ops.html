@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자란다 매칭 운영 툴</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #F5F4F0;
+  --surface: #FFFFFF;
+  --surface2: #F0EFEb;
+  --border: #E2E0DA;
+  --border2: #CCCAC3;
+  --text: #1A1917;
+  --text2: #6B6861;
+  --text3: #9E9C97;
+  --green: #1D9E75;
+  --green-bg: #E1F5EE;
+  --green-text: #085041;
+  --amber: #BA7517;
+  --amber-bg: #FAEEDA;
+  --amber-text: #633806;
+  --red: #A32D2D;
+  --red-bg: #FCEBEB;
+  --red-text: #791F1F;
+  --blue: #185FA5;
+  --blue-bg: #E6F1FB;
+  --blue-text: #0C447C;
+  --gray-bg: #F1EFE8;
+  --gray-text: #444441;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Noto Sans KR', sans-serif;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+/* LAYOUT */
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 52px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.brand {
+  background: #085041; color: #9FE1CB;
+  font-size: 11px; font-weight: 600; letter-spacing: .08em;
+  padding: 3px 10px; border-radius: 6px;
+}
+.page-title { font-size: 15px; font-weight: 600; }
+.page-sub { font-size: 12px; color: var(--text2); }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+.topbar-meta { font-size: 12px; color: var(--text3); }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+
+/* LIST PANEL */
+.list-panel {
+  width: 100%; flex-shrink: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: width .25s ease;
+}
+.list-panel.with-detail { width: 56%; }
+
+.list-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.list-header-left { display: flex; align-items: center; gap: 8px; }
+.list-count { font-size: 12px; color: var(--text2); }
+
+.tbl-scroll { overflow-y: auto; flex: 1; }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); }
+thead { position: sticky; top: 0; z-index: 2; background: var(--surface); }
+th {
+  font-size: 11px; font-weight: 500; color: var(--text2);
+  padding: 8px 10px; text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap; user-select: none;
+}
+th:first-child { padding-left: 20px; }
+td {
+  padding: 10px 10px; border-bottom: 1px solid var(--border);
+  vertical-align: middle; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+td:first-child { padding-left: 20px; }
+tbody tr { cursor: pointer; transition: background .1s; }
+tbody tr:hover { background: #F8F7F4; }
+tbody tr.active { background: var(--green-bg) !important; }
+tbody tr:last-child td { border-bottom: none; }
+
+/* BADGES */
+.bdg {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 500; padding: 2px 8px;
+  border-radius: 99px; white-space: nowrap;
+}
+.bdg-완료 { background: var(--green-bg); color: var(--green-text); }
+.bdg-진행 { background: var(--blue-bg); color: var(--blue-text); }
+.bdg-미배정 { background: var(--gray-bg); color: var(--gray-text); }
+.bdg-취소 { background: var(--red-bg); color: var(--red-text); }
+.bdg-이용 { background: var(--amber-bg); color: var(--amber-text); }
+.bdg-신규 { background: var(--gray-bg); color: var(--gray-text); }
+
+.sid { font-family: var(--mono); font-size: 11px; color: var(--text2); font-weight: 500; }
+
+.timer { font-weight: 600; font-size: 12px; }
+.timer-r { color: var(--red); }
+.timer-a { color: var(--amber); }
+.timer-g { color: var(--green); }
+.timer-none { color: var(--text3); }
+
+.prob-wrap { display: flex; align-items: center; gap: 5px; }
+.prob-bar { width: 44px; height: 5px; background: var(--border); border-radius: 99px; overflow: hidden; flex-shrink: 0; }
+.prob-fill { height: 100%; border-radius: 99px; }
+.prob-val { font-size: 12px; font-weight: 500; }
+
+/* DETAIL PANEL */
+.detail-panel {
+  width: 0; flex-shrink: 0; overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  display: flex; flex-direction: column;
+  transition: width .25s ease;
+}
+.detail-panel.open { width: 44%; }
+
+.dp-header {
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dp-header-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.dp-title { font-size: 15px; font-weight: 600; }
+.dp-sub { font-size: 12px; color: var(--text2); margin-top: 3px; }
+
+.dp-scroll { flex: 1; overflow-y: auto; }
+
+.dp-section { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.sec-lbl {
+  font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text3); margin-bottom: 10px;
+}
+
+/* INSIGHT BOX */
+.insight-box {
+  margin: 12px 18px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--green);
+  background: var(--green-bg);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.insight-box.warn { border-left-color: var(--amber); background: var(--amber-bg); }
+.insight-box.danger { border-left-color: var(--red); background: var(--red-bg); }
+.insight-lbl { font-size: 11px; font-weight: 600; color: var(--green-text); margin-bottom: 3px; }
+.insight-box.warn .insight-lbl { color: var(--amber-text); }
+.insight-box.danger .insight-lbl { color: var(--red-text); }
+.insight-txt { font-size: 12px; color: var(--green-text); line-height: 1.55; }
+.insight-box.warn .insight-txt { color: var(--amber-text); }
+.insight-box.danger .insight-txt { color: var(--red-text); }
+
+/* INFO ROWS */
+.info-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.info-key { font-size: 12px; color: var(--text2); flex-shrink: 0; }
+.info-val { font-size: 12px; font-weight: 500; color: var(--text); text-align: right; }
+
+/* TEACHER ROWS */
+.teacher-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--border);
+}
+.teacher-row:last-child { border-bottom: none; }
+.t-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; flex-shrink: 0;
+}
+.t-name { font-size: 12px; font-weight: 500; flex: 1; min-width: 0; }
+.t-stat { font-size: 11px; color: var(--text2); }
+.t-resp { font-size: 11px; font-weight: 500; margin-left: auto; white-space: nowrap; }
+
+/* TIMELINE */
+.tl-item { display: flex; gap: 10px; padding-bottom: 12px; position: relative; }
+.tl-item:last-child { padding-bottom: 0; }
+.tl-dot-col { display: flex; flex-direction: column; align-items: center; width: 14px; flex-shrink: 0; }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+.tl-line { flex: 1; width: 1px; background: var(--border); margin-top: 4px; min-height: 12px; }
+.tl-item:last-child .tl-line { display: none; }
+.tl-content { flex: 1; min-width: 0; }
+.tl-action { font-size: 12px; font-weight: 500; }
+.tl-time { font-size: 11px; color: var(--text3); margin-top: 1px; }
+.tl-detail { font-size: 11px; color: var(--text2); margin-top: 3px; line-height: 1.4; }
+
+/* MEMO */
+.memo-area { padding: 14px 18px; flex-shrink: 0; border-top: 1px solid var(--border); }
+.memo-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.memo-item { background: var(--bg); border-radius: var(--radius); padding: 8px 10px; }
+.memo-who { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
+.memo-txt { font-size: 12px; color: var(--text); line-height: 1.55; }
+.memo-empty { font-size: 12px; color: var(--text3); margin-bottom: 10px; }
+.memo-input-row { display: flex; gap: 8px; align-items: flex-end; }
+.memo-input-row textarea {
+  flex: 1; font-size: 12px; font-family: var(--sans);
+  min-height: 54px; padding: 8px 10px;
+  border: 1px solid var(--border2); border-radius: var(--radius);
+  background: var(--surface); color: var(--text);
+  resize: none; outline: none;
+  transition: border-color .15s;
+}
+.memo-input-row textarea:focus { border-color: var(--green); }
+.btn-save {
+  height: 32px; padding: 0 14px; font-size: 12px; font-family: var(--sans);
+  background: var(--green); color: #fff; border: none;
+  border-radius: var(--radius); cursor: pointer; font-weight: 500;
+  white-space: nowrap; flex-shrink: 0;
+  transition: opacity .15s;
+}
+.btn-save:hover { opacity: .88; }
+
+/* BTN */
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 30px; padding: 0 12px; font-size: 12px; font-family: var(--sans);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border2); border-radius: var(--radius);
+  cursor: pointer; font-weight: 500; white-space: nowrap;
+  transition: background .1s, border-color .1s;
+}
+.btn:hover { background: var(--surface2); border-color: var(--border2); }
+.btn-primary { background: var(--green); color: #fff; border-color: var(--green); }
+.btn-primary:hover { background: #0F6E56; border-color: #0F6E56; }
+.btn-close {
+  background: none; border: none; cursor: pointer; color: var(--text3);
+  font-size: 18px; line-height: 1; padding: 2px 4px;
+  border-radius: 4px; transition: color .1s, background .1s;
+}
+.btn-close:hover { color: var(--text); background: var(--surface2); }
+
+.action-btns { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); flex-shrink: 0; }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+/* EMPTY */
+.no-teacher { font-size: 12px; color: var(--text3); padding: 4px 0; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="brand">자란다 OPS</span>
+      <div>
+        <div class="page-title">매칭 신청서 관리</div>
+        <div class="page-sub">수동 매칭 진행 · 기록 관리</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-meta" id="live-time"></span>
+      <button class="btn btn-primary" onclick="alert('신규 신청서 등록 화면 (구현 예정)')">+ 신규 신청서</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- LIST PANEL -->
+    <div class="list-panel" id="list-panel">
+      <div class="list-header">
+        <div class="list-header-left">
+          <span style="font-size:13px;font-weight:600">전체 신청서</span>
+          <span class="list-count" id="list-count">5건</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn" onclick="sortBy('timer')">⏱ 취소임박순</button>
+          <button class="btn" onclick="sortBy('prob')">📊 확률높은순</button>
+          <button class="btn" onclick="sortBy('date')">🕐 접수순</button>
+        </div>
+      </div>
+
+      <div class="tbl-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:82px">SID</th>
+              <th style="width:58px">이용기록</th>
+              <th style="width:90px">접수일시</th>
+              <th style="width:72px">상태</th>
+              <th style="width:54px">담당자</th>
+              <th style="width:78px">자동취소까지</th>
+              <th style="width:50px">요청수</th>
+              <th style="width:64px">응답시간</th>
+              <th style="width:72px">확정시간</th>
+              <th style="width:72px">매칭확률</th>
+              <th style="width:56px">매칭결과</th>
+            </tr>
+          </thead>
+          <tbody id="tbl-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- DETAIL PANEL -->
+    <div class="detail-panel" id="detail-panel">
+      <div class="dp-header">
+        <div class="dp-header-top">
+          <div>
+            <div class="dp-title" id="dp-title"></div>
+            <div class="dp-sub" id="dp-sub"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span id="dp-status-bdg"></span>
+            <button class="btn-close" onclick="closeDetail()" aria-label="닫기">×</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="dp-scroll">
+        <div id="dp-insight"></div>
+
+        <div class="dp-section" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;border-bottom:1px solid var(--border)">
+          <div>
+            <div class="sec-lbl">신청서 정보</div>
+            <div id="dp-info"></div>
+          </div>
+          <div>
+            <div class="sec-lbl">액션 타임라인</div>
+            <div class="timeline" id="dp-timeline"></div>
+          </div>
+        </div>
+
+        <div class="dp-section">
+          <div class="sec-lbl">선생님 요청 현황</div>
+          <div id="dp-teachers"></div>
+        </div>
+      </div>
+
+      <div class="action-btns">
+        <button class="btn btn-primary" onclick="alert('선생님 선택 후 발송 화면 (구현 예정)')">선생님 선택 후 발송</button>
+        <button class="btn" onclick="alert('추가 알림 발송 (구현 예정)')">추가 알림 발송</button>
+        <button class="btn" style="margin-left:auto;color:var(--red);border-color:var(--red)" onclick="alert('매칭 취소 처리 (구현 예정)')">취소 처리</button>
+      </div>
+
+      <div class="memo-area">
+        <div class="sec-lbl">담당자 메모</div>
+        <div class="memo-list" id="dp-memos"></div>
+        <div class="memo-input-row">
+          <textarea id="memo-input" placeholder="이 신청서에 대한 메모를 남겨주세요..."></textarea>
+          <button class="btn-save" onclick="addMemo()">저장</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const ROWS = [
+  {
+    key:'A', sid:'SID-2847', hist:'3회', histType:'이용',
+    date:'05/14 09:12', status:'진행중', assignee:'김지은',
+    timerMin: 83, reqCount:4, respAvg:'18분', confirmed:'—',
+    prob:78, result:'—', resultType:'',
+    title:'SID-2847 · 김○○ 학부모', sub:'초등 3학년 · 수학 · 서울 마포구 · 접수 05/14 09:12',
+    insightType:'ok',
+    insightTitle:'매칭 인사이트 · 확률 78%',
+    insightText:'이용 경험 3회 · 알림톡 수신 후 12분 내 접수. 과거 매칭 시 지역 근접 선생님 선호. 현재 응답 중인 선생님 2명 중 1명이 마포구 거주로 적합도 높음.',
+    info:[
+      ['담당자','김지은'],['이용기록','3회 (재이용)'],['알림 채널','카카오 알림톡'],
+      ['알림→접수','12분'],['접수→요청발송','8분'],['자동취소까지','1h 23m 남음'],['확정시간','—'],['총 소요시간','진행중']
+    ],
+    teachers:[
+      {init:'박',name:'박○○',stat:'응답완료',resp:'13분',respColor:'var(--green)'},
+      {init:'이',name:'이○○',stat:'응답완료',resp:'23분',respColor:'var(--green)'},
+      {init:'최',name:'최○○',stat:'미응답',resp:'31분 경과',respColor:'var(--red)'},
+      {init:'정',name:'정○○',stat:'거절',resp:'—',respColor:'var(--text3)'},
+    ],
+    timeline:[
+      {dot:'#1D9E75',action:'알림톡 발송',time:'05/14 09:00',detail:'수업 요청 알림 발송'},
+      {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 09:12',detail:'반응 소요 12분'},
+      {dot:'#185FA5',action:'담당자 배정',time:'05/14 09:15',detail:'김지은 배정'},
+      {dot:'#185FA5',action:'선생님 4명 요청 발송',time:'05/14 09:20',detail:'박○○, 이○○, 최○○, 정○○'},
+      {dot:'#1D9E75',action:'박○○ 수락',time:'05/14 09:33',detail:'응답 13분'},
+      {dot:'#1D9E75',action:'이○○ 수락',time:'05/14 09:43',detail:'응답 23분'},
+      {dot:'#A32D2D',action:'정○○ 거절',time:'05/14 09:44',detail:''},
+      {dot:'#BA7517',action:'학부모 확인 대기중',time:'현재',detail:'수락 선생님 2명 대기'},
+    ],
+    memos:[{who:'김지은 · 09:25',txt:'박○○ 선생님 마포구 거주 확인. 학부모 선호 조건 부합. 우선 추천 예정.'}]
+  },
+  {
+    key:'B', sid:'SID-2846', hist:'신규', histType:'신규',
+    date:'05/14 08:45', status:'진행중', assignee:'박수현',
+    timerMin: 187, reqCount:2, respAvg:'미응답', confirmed:'—',
+    prob:41, result:'—', resultType:'',
+    title:'SID-2846 · 이○○ 학부모', sub:'초등 5학년 · 영어 · 서울 서대문구 · 접수 05/14 08:45',
+    insightType:'warn',
+    insightTitle:'주의 · 확률 41%',
+    insightText:'신규 학부모 · 요청 보낸 선생님 2명 모두 미응답 30분 초과. 추가 발송 필요. 동일 과목·지역 가용 선생님 3명 남아있음.',
+    info:[
+      ['담당자','박수현'],['이용기록','신규'],['알림 채널','푸시 알림'],
+      ['알림→접수','34분'],['접수→요청발송','15분'],['자동취소까지','3h 07m 남음'],['확정시간','—'],['총 소요시간','진행중']
+    ],
+    teachers:[
+      {init:'한',name:'한○○',stat:'미응답',resp:'42분 경과',respColor:'var(--red)'},
+      {init:'오',name:'오○○',stat:'미응답',resp:'38분 경과',respColor:'var(--red)'},
+    ],
+    timeline:[
+      {dot:'#1D9E75',action:'푸시 알림 발송',time:'05/14 08:11',detail:'수업 요청 알림'},
+      {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 08:45',detail:'반응 소요 34분'},
+      {dot:'#185FA5',action:'담당자 배정',time:'05/14 08:48',detail:'박수현 배정'},
+      {dot:'#185FA5',action:'선생님 2명 요청 발송',time:'05/14 09:00',detail:'한○○, 오○○'},
+      {dot:'#BA7517',action:'미응답 30분 초과',time:'05/14 09:30',detail:'추가 발송 필요'},
+    ],
+    memos:[{who:'박수현 · 09:35',txt:'두 분 모두 미응답. 추가 발송 대상 확인 중. 서대문구 가용 선생님 3명 더 있음.'}]
+  },
+  {
+    key:'C', sid:'SID-2845', hist:'7회', histType:'이용',
+    date:'05/14 07:30', status:'매칭완료', assignee:'김지은',
+    timerMin: null, reqCount:3, respAvg:'9분', confirmed:'11:04',
+    prob:91, result:'성공', resultType:'ok',
+    title:'SID-2845 · 최○○ 학부모', sub:'초등 2학년 · 영어 · 서울 강남구 · 접수 05/14 07:30',
+    insightType:'ok',
+    insightTitle:'매칭 완료 · 성공 이유',
+    insightText:'이용 7회 재이용 고객. 과거 선호 선생님 스타일(여성·30대·영어 전공) 부합. 요청 3명 중 가장 빠르게 응답한 선생님으로 확정. 접수→확정 3h 34m.',
+    info:[
+      ['담당자','김지은'],['이용기록','7회 (재이용)'],['알림 채널','카카오 알림톡'],
+      ['알림→접수','8분'],['접수→요청발송','6분'],['자동취소까지','—'],['확정시간','05/14 11:04'],['총 소요시간','3h 34m']
+    ],
+    teachers:[
+      {init:'강',name:'강○○',stat:'수락 → 확정',resp:'7분',respColor:'var(--green)'},
+      {init:'윤',name:'윤○○',stat:'수락 (미선택)',resp:'11분',respColor:'var(--text2)'},
+      {init:'장',name:'장○○',stat:'거절',resp:'—',respColor:'var(--text3)'},
+    ],
+    timeline:[
+      {dot:'#1D9E75',action:'알림톡 발송',time:'05/14 07:22',detail:''},
+      {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 07:30',detail:'반응 소요 8분'},
+      {dot:'#185FA5',action:'선생님 3명 요청 발송',time:'05/14 07:36',detail:'강○○, 윤○○, 장○○'},
+      {dot:'#1D9E75',action:'강○○ 수락',time:'05/14 07:43',detail:'응답 7분'},
+      {dot:'#1D9E75',action:'윤○○ 수락',time:'05/14 07:47',detail:'응답 11분'},
+      {dot:'#A32D2D',action:'장○○ 거절',time:'05/14 07:50',detail:''},
+      {dot:'#1D9E75',action:'학부모 강○○ 확정',time:'05/14 11:04',detail:'접수→확정 3h 34m'},
+    ],
+    memos:[
+      {who:'김지은 · 07:40',txt:'7회 재이용. 과거 여성 선생님 선호 이력 있어 강○○ 우선 노출.'},
+      {who:'김지은 · 11:10',txt:'강○○ 선생님으로 확정 완료. 학부모 응대 만족도 높았음.'},
+    ]
+  },
+  {
+    key:'D', sid:'SID-2844', hist:'신규', histType:'신규',
+    date:'05/13 16:20', status:'취소', assignee:'이민호',
+    timerMin: null, reqCount:1, respAvg:'미응답', confirmed:'—',
+    prob:29, result:'실패', resultType:'fail',
+    title:'SID-2844 · 정○○ 학부모', sub:'중학교 1학년 · 수학 · 경기 고양시 · 접수 05/13 16:20',
+    insightType:'danger',
+    insightTitle:'매칭 실패 · 원인 분석',
+    insightText:'신규 학부모 · 요청 1명 발송 후 자동취소. 가용 선생님 수 부족(해당 지역 2명). 알림 발송 후 학부모 미확인 24h 초과. 추가 알림 시도가 필요했음.',
+    info:[
+      ['담당자','이민호'],['이용기록','신규'],['알림 채널','이메일'],
+      ['알림→접수','2h 10분'],['접수→요청발송','22분'],['자동취소까지','—'],['확정시간','—'],['총 소요시간','자동취소']
+    ],
+    teachers:[
+      {init:'송',name:'송○○',stat:'미응답 → 만료',resp:'—',respColor:'var(--red)'},
+    ],
+    timeline:[
+      {dot:'#BA7517',action:'이메일 알림 발송',time:'05/13 14:10',detail:''},
+      {dot:'#BA7517',action:'학부모 신청서 접수',time:'05/13 16:20',detail:'반응 소요 2h 10분'},
+      {dot:'#185FA5',action:'선생님 1명 요청 발송',time:'05/13 16:42',detail:'송○○'},
+      {dot:'#A32D2D',action:'송○○ 미응답',time:'05/13 17:42',detail:'1시간 경과 무응답'},
+      {dot:'#A32D2D',action:'자동취소 처리',time:'05/14 00:00',detail:'가용 선생님 소진'},
+    ],
+    memos:[{who:'이민호 · 17:45',txt:'고양시 가용 선생님 1명뿐이었음. 미응답으로 추가 발송 불가. 지역 커버리지 개선 필요.'}]
+  },
+  {
+    key:'E', sid:'SID-2843', hist:'1회', histType:'이용',
+    date:'05/13 14:50', status:'미배정', assignee:'박수현',
+    timerMin: 400, reqCount:0, respAvg:'—', confirmed:'—',
+    prob:55, result:'—', resultType:'',
+    title:'SID-2843 · 한○○ 학부모', sub:'초등 4학년 · 과학 · 서울 동작구 · 접수 05/13 14:50',
+    insightType:'warn',
+    insightTitle:'주의 · 확률 55%',
+    insightText:'1회 이용 학부모. 아직 선생님 요청 미발송 상태. 6h 40m 내 처리 필요. 해당 지역·과목 가용 선생님 5명 확인됨.',
+    info:[
+      ['담당자','박수현'],['이용기록','1회'],['알림 채널','앱 배너'],
+      ['알림→접수','45분'],['접수→요청발송','—'],['자동취소까지','6h 40m 남음'],['확정시간','—'],['총 소요시간','진행중']
+    ],
+    teachers:[],
+    timeline:[
+      {dot:'#1D9E75',action:'앱 배너 노출',time:'05/13 14:05',detail:''},
+      {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/13 14:50',detail:'반응 소요 45분'},
+      {dot:'#185FA5',action:'담당자 배정',time:'05/13 14:55',detail:'박수현 배정'},
+      {dot:'#BA7517',action:'요청 발송 대기중',time:'현재',detail:'선생님 선택 전'},
+    ],
+    memos:[]
+  }
+];
+
+const memoStore = {};
+ROWS.forEach(r => { memoStore[r.key] = [...r.memos]; });
+
+let currentKey = null;
+let sortedRows = [...ROWS];
+
+function timerClass(min) {
+  if (min === null) return 'timer-none';
+  if (min < 120) return 'timer-r';
+  if (min < 240) return 'timer-a';
+  return 'timer-g';
+}
+
+function timerLabel(min) {
+  if (min === null) return '—';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function probColor(p) {
+  if (p >= 70) return '#1D9E75';
+  if (p >= 45) return '#BA7517';
+  return '#A32D2D';
+}
+
+function statusBdg(status) {
+  const map = {
+    '진행중':'bdg-진행','매칭완료':'bdg-완료','취소':'bdg-취소','미배정':'bdg-미배정'
+  };
+  return `<span class="bdg ${map[status]||''}">${status}</span>`;
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tbl-body');
+  tbody.innerHTML = sortedRows.map(r => `
+    <tr onclick="showDetail('${r.key}')" id="row-${r.key}" class="${currentKey===r.key?'active':''}">
+      <td><span class="sid">${r.sid}</span></td>
+      <td><span class="bdg bdg-${r.histType}">${r.hist}</span></td>
+      <td style="font-size:12px">${r.date}</td>
+      <td>${statusBdg(r.status)}</td>
+      <td style="font-size:12px">${r.assignee}</td>
+      <td><span class="timer ${timerClass(r.timerMin)}">${timerLabel(r.timerMin)}</span></td>
+      <td style="text-align:center;font-size:12px">${r.reqCount}명</td>
+      <td style="font-size:12px">${r.respAvg}</td>
+      <td style="font-size:12px">${r.confirmed !== '—' ? r.confirmed + ' 확정' : '—'}</td>
+      <td>
+        <div class="prob-wrap">
+          <div class="prob-bar"><div class="prob-fill" style="width:${r.prob}%;background:${probColor(r.prob)}"></div></div>
+          <span class="prob-val" style="color:${probColor(r.prob)}">${r.prob}%</span>
+        </div>
+      </td>
+      <td style="font-size:12px;font-weight:500;color:${r.resultType==='ok'?'var(--green-text)':r.resultType==='fail'?'var(--red-text)':'var(--text3)'}">${r.result}</td>
+    </tr>
+  `).join('');
+}
+
+function sortBy(type) {
+  if (type === 'timer') {
+    sortedRows = [...ROWS].sort((a,b) => {
+      if (a.timerMin === null && b.timerMin === null) return 0;
+      if (a.timerMin === null) return 1;
+      if (b.timerMin === null) return -1;
+      return a.timerMin - b.timerMin;
+    });
+  } else if (type === 'prob') {
+    sortedRows = [...ROWS].sort((a,b) => b.prob - a.prob);
+  } else {
+    sortedRows = [...ROWS];
+  }
+  renderTable();
+}
+
+function showDetail(key) {
+  const d = ROWS.find(r => r.key === key);
+  if (!d) return;
+  currentKey = key;
+  renderTable();
+
+  document.getElementById('dp-title').textContent = d.title;
+  document.getElementById('dp-sub').textContent = d.sub;
+  document.getElementById('dp-status-bdg').outerHTML = `<span id="dp-status-bdg">${statusBdg(d.status)}</span>`;
+
+  const iMap = {ok:'',warn:'warn',danger:'danger'};
+  document.getElementById('dp-insight').innerHTML = `
+    <div class="insight-box ${iMap[d.insightType]}" style="margin:12px 18px 0">
+      <div class="insight-lbl">${d.insightTitle}</div>
+      <div class="insight-txt">${d.insightText}</div>
+    </div>
+  `;
+
+  document.getElementById('dp-info').innerHTML = d.info.map(([k,v]) =>
+    `<div class="info-row"><span class="info-key">${k}</span><span class="info-val">${v}</span></div>`
+  ).join('');
+
+  document.getElementById('dp-timeline').innerHTML = d.timeline.map((t,i) => `
+    <div class="tl-item">
+      <div class="tl-dot-col">
+        <div class="tl-dot" style="background:${t.dot}"></div>
+        ${i < d.timeline.length-1 ? '<div class="tl-line"></div>' : ''}
+      </div>
+      <div class="tl-content">
+        <div class="tl-action">${t.action}</div>
+        <div class="tl-time">${t.time}</div>
+        ${t.detail ? `<div class="tl-detail">${t.detail}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  const tEl = document.getElementById('dp-teachers');
+  if (d.teachers.length === 0) {
+    tEl.innerHTML = '<div class="no-teacher">아직 요청한 선생님이 없습니다.</div>';
+  } else {
+    tEl.innerHTML = d.teachers.map(t => `
+      <div class="teacher-row">
+        <div class="t-avatar" style="background:${t.respColor==='var(--green)'?'var(--green-bg)':t.respColor==='var(--red)'?'var(--red-bg)':'var(--gray-bg)'};color:${t.respColor==='var(--green)'?'var(--green-text)':t.respColor==='var(--red)'?'var(--red-text)':'var(--gray-text)'}">${t.init}</div>
+        <div class="t-name">${t.name}</div>
+        <div class="t-stat">${t.stat}</div>
+        <div class="t-resp" style="color:${t.respColor}">${t.resp}</div>
+      </div>
+    `).join('');
+  }
+
+  renderMemos(key);
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('list-panel').classList.add('with-detail');
+  document.getElementById('memo-input').value = '';
+}
+
+function renderMemos(key) {
+  const el = document.getElementById('dp-memos');
+  const memos = memoStore[key] || [];
+  if (memos.length === 0) {
+    el.innerHTML = '<div class="memo-empty">아직 메모가 없습니다.</div>';
+  } else {
+    el.innerHTML = memos.map(m =>
+      `<div class="memo-item"><div class="memo-who">${m.who}</div><div class="memo-txt">${m.txt}</div></div>`
+    ).join('');
+  }
+}
+
+function addMemo() {
+  const txt = document.getElementById('memo-input').value.trim();
+  if (!txt || !currentKey) return;
+  const now = new Date();
+  const hm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const assigneeMap = {A:'김지은',B:'박수현',C:'김지은',D:'이민호',E:'박수현'};
+  if (!memoStore[currentKey]) memoStore[currentKey] = [];
+  memoStore[currentKey].push({ who: `${assigneeMap[currentKey]} · ${hm}`, txt });
+  renderMemos(currentKey);
+  document.getElementById('memo-input').value = '';
+}
+
+function closeDetail() {
+  currentKey = null;
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('list-panel').classList.remove('with-detail');
+  renderTable();
+}
+
+function updateTime() {
+  const now = new Date();
+  document.getElementById('live-time').textContent =
+    now.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'}) + ' ' +
+    now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+}
+
+renderTable();
+updateTime();
+setInterval(updateTime, 30000);
+</script>
+</body>
+</html>
