@@ -6,6 +6,7 @@
 <title>자란다 매칭 운영 툴</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -65,6 +66,12 @@ html, body {
 .page-title { font-size: 15px; font-weight: 600; }
 .page-sub { font-size: 12px; color: var(--text2); }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
+.data-source-pill {
+  font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 99px;
+  background: var(--gray-bg); color: var(--gray-text);
+}
+.data-source-pill.live { background: var(--green-bg); color: var(--green-text); }
 .topbar-meta { font-size: 12px; color: var(--text3); }
 
 .main { display: flex; flex: 1; overflow: hidden; }
@@ -529,6 +536,10 @@ tbody tr:last-child td { border-bottom: none; }
       </nav>
     </div>
     <div class="topbar-right">
+      <span class="data-source-pill" id="data-source-pill" title="현재 데이터 출처">mock</span>
+      <div id="g-signin-slot"></div>
+      <span class="topbar-meta" id="auth-email" style="display:none"></span>
+      <button class="btn" id="logout-btn" onclick="logout()" style="display:none">로그아웃</button>
       <span class="topbar-meta" id="live-time"></span>
       <button class="btn btn-primary" id="new-app-btn" onclick="alert('신규 신청서 등록 화면 (구현 예정)')">+ 신규 신청서</button>
     </div>
@@ -659,7 +670,148 @@ tbody tr:last-child td { border-bottom: none; }
 </div>
 
 <script>
-const ROWS = [
+// ====== API + AUTH ======
+const API_BASE = 'https://matching-ops-api-266295307740.asia-northeast3.run.app';
+const GOOGLE_CLIENT_ID = '266295307740-qq4ra3mgga9uv5e58pm5hag1pq668l6k.apps.googleusercontent.com';
+
+let authToken = localStorage.getItem('mo-token') || '';
+let authEmail = localStorage.getItem('mo-email') || '';
+
+function setDataSource(src) {
+  const pill = document.getElementById('data-source-pill');
+  if (!pill) return;
+  pill.textContent = src;
+  pill.classList.toggle('live', src === 'live');
+}
+
+function updateAuthUI() {
+  const slot = document.getElementById('g-signin-slot');
+  const emailEl = document.getElementById('auth-email');
+  const logoutBtn = document.getElementById('logout-btn');
+  if (authToken && authEmail) {
+    slot.style.display = 'none';
+    emailEl.style.display = '';
+    emailEl.textContent = authEmail;
+    logoutBtn.style.display = '';
+  } else {
+    slot.style.display = '';
+    emailEl.style.display = 'none';
+    logoutBtn.style.display = 'none';
+    renderGoogleButton();
+  }
+}
+
+function renderGoogleButton() {
+  if (!window.google || !google.accounts || !google.accounts.id) {
+    setTimeout(renderGoogleButton, 200);
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGoogleCredential,
+  });
+  const slot = document.getElementById('g-signin-slot');
+  if (slot) {
+    slot.innerHTML = '';
+    google.accounts.id.renderButton(slot, {theme:'outline', size:'small', text:'signin', shape:'pill'});
+  }
+}
+
+async function handleGoogleCredential(response) {
+  try {
+    const r = await fetch(API_BASE + '/api/auth/google', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({credential: response.credential}),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(()=>({detail:'unknown'}));
+      alert('로그인 실패: ' + (err.detail || r.status));
+      return;
+    }
+    const data = await r.json();
+    authToken = data.token;
+    authEmail = data.email;
+    localStorage.setItem('mo-token', authToken);
+    localStorage.setItem('mo-email', authEmail);
+    updateAuthUI();
+    loadLiveData();
+  } catch (e) {
+    alert('로그인 오류: ' + e.message);
+  }
+}
+
+function logout() {
+  authToken = '';
+  authEmail = '';
+  localStorage.removeItem('mo-token');
+  localStorage.removeItem('mo-email');
+  updateAuthUI();
+  setDataSource('mock');
+  // 페이지 새로고침해서 mock 데이터 복원
+  location.reload();
+}
+
+async function apiFetch(path) {
+  if (!authToken) throw new Error('no-token');
+  const r = await fetch(API_BASE + path, {
+    headers: {'Authorization': 'Bearer ' + authToken},
+  });
+  if (r.status === 401) {
+    // 세션 만료 → 로그아웃
+    authToken = '';
+    authEmail = '';
+    localStorage.removeItem('mo-token');
+    localStorage.removeItem('mo-email');
+    updateAuthUI();
+    throw new Error('unauthorized');
+  }
+  if (!r.ok) throw new Error('api-error ' + r.status);
+  return r.json();
+}
+
+// 라이브 데이터 로드 — 성공 시 ROWS 교체 + 재렌더, 실패/미인증 시 mock 유지
+async function loadLiveData() {
+  if (!authToken) {
+    setDataSource('mock');
+    return;
+  }
+  try {
+    const data = await apiFetch('/api/applications?limit=30');
+    if (data && Array.isArray(data.rows) && data.rows.length > 0) {
+      // 백엔드 응답을 ROWS와 호환되도록 보강 (mock 전용 필드는 빈값으로)
+      const merged = data.rows.map(r => ({
+        teachers: [],
+        timeline: [],
+        memos: [],
+        info: [],
+        insightType: 'ok',
+        insightTitle: '실데이터 (replica)',
+        insightText: '운영 DB에서 가져온 실제 신청서입니다.',
+        prob: r.prob ?? 0,
+        // mock의 보조 필드
+        appCount: r.appCount ?? '—',
+        confirmedCount: r.confirmedCount ?? 0,
+        lessonCount: r.lessonCount ?? 0,
+        visitsAfter: r.visitsAfter ?? 0,
+        ...r,
+      }));
+      // 라이브 데이터로 ROWS 자체 교체 → 정렬·필터도 라이브 기준으로 작동
+      ROWS = merged;
+      merged.forEach(m => { if (!memoStore[m.key]) memoStore[m.key] = []; });
+      currentKey = null;
+      applyFilterSort();
+      setDataSource('live');
+    } else {
+      setDataSource('mock');
+    }
+  } catch (e) {
+    console.warn('Live data fetch failed, fallback to mock:', e.message);
+    setDataSource('mock');
+  }
+}
+
+let ROWS = [
   {
     key:'A', sid:'SID-2847',
     isNew:false, appCount:4, confirmedCount:3, lessonCount:12, visitsAfter:5, applyCount:3,
@@ -1386,6 +1538,10 @@ renderAssigneeFilter();
 renderTable();
 updateTime();
 setInterval(updateTime, 30000);
+
+// 인증 UI + 라이브 데이터 시도 (토큰 있으면 실데이터, 없으면 mock 유지)
+updateAuthUI();
+if (authToken) loadLiveData();
 </script>
 </body>
 </html>
