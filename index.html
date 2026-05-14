@@ -446,10 +446,57 @@ input, textarea, select { font-family: inherit; }
 .data-source-pill.live { background: #E4F5EA; color: #1F6B3C; }
 .auth-email { font-size: 11px; color: #6B7280; }
 
+/* ===== LOGIN GATE (full-screen) ===== */
+.login-gate {
+  position: fixed; inset: 0; z-index: 100;
+  background: #F7F8FA;
+  display: flex; align-items: center; justify-content: center;
+}
+.gate-card {
+  background: #fff; border: 1px solid #E5E8EC; border-radius: 16px;
+  padding: 40px 36px; width: 400px; max-width: calc(100vw - 32px);
+  box-shadow: 0 4px 24px rgba(15,23,42,0.06);
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+}
+.gate-logo {
+  width: 56px; height: 56px; border-radius: 14px; background: #1B4FB8;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 24px; letter-spacing: -0.02em;
+}
+.gate-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: #0F172A; text-align: center; }
+.gate-title .sub { color: #6B7280; font-weight: 600; }
+.gate-desc { font-size: 13px; color: #6B7280; text-align: center; line-height: 1.55; }
+.gate-desc .em { color: #1B4FB8; font-weight: 600; }
+.gate-signin { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 8px; }
+.gate-err {
+  background: #FBE0DC; color: #A4271A; padding: 8px 12px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; display: none;
+}
+.gate-err.show { display: block; }
+
+#app-shell { display: none; }
+#app-shell.ready { display: block; }
 </style>
 </head>
 <body>
 
+<!-- LOGIN GATE -->
+<div class="login-gate" id="login-gate">
+  <div class="gate-card">
+    <div class="gate-logo">자</div>
+    <div class="gate-title">자란다 <span class="sub">OPS</span></div>
+    <div class="gate-desc">
+      매칭 운영 도구입니다.<br>
+      <span class="em">@jaranda.kr</span> 계정으로 로그인하세요.
+    </div>
+    <div class="gate-err" id="gate-err"></div>
+    <div class="gate-signin">
+      <div id="gate-signin-slot"></div>
+    </div>
+  </div>
+</div>
+
+<div id="app-shell">
 <div id="app">
   <!-- HEADER -->
   <header class="topbar">
@@ -551,6 +598,7 @@ input, textarea, select { font-family: inherit; }
       </div>
     </div>
   </main>
+</div>
 </div>
 
 <script>
@@ -676,39 +724,60 @@ function setDataSource(src) {
   pill.classList.toggle('live', src === 'live');
 }
 
+function showGate(err) {
+  document.getElementById('login-gate').style.display = '';
+  document.getElementById('app-shell').classList.remove('ready');
+  const errEl = document.getElementById('gate-err');
+  if (err) { errEl.textContent = err; errEl.classList.add('show'); }
+  else { errEl.classList.remove('show'); }
+  renderGoogleButton('gate-signin-slot', true);
+}
+
+function showApp() {
+  document.getElementById('login-gate').style.display = 'none';
+  document.getElementById('app-shell').classList.add('ready');
+  updateAuthUI();
+}
+
 function updateAuthUI() {
-  const slot = document.getElementById('g-signin-slot');
   const emailEl = document.getElementById('auth-email');
   const logoutBtn = document.getElementById('logout-btn');
   const avatar = document.getElementById('user-avatar');
+  const slot = document.getElementById('g-signin-slot');
+  if (slot) slot.style.display = 'none';
   if (authToken && authEmail) {
-    slot.style.display = 'none';
     emailEl.style.display = '';
     emailEl.textContent = authEmail;
     logoutBtn.style.display = '';
     if (avatar) avatar.textContent = (authEmail[0] || '?').toUpperCase();
   } else {
-    slot.style.display = '';
     emailEl.style.display = 'none';
     logoutBtn.style.display = 'none';
     if (avatar) avatar.textContent = '?';
-    renderGoogleButton();
   }
 }
 
-function renderGoogleButton() {
+function renderGoogleButton(slotId, large) {
+  slotId = slotId || 'gate-signin-slot';
   if (!window.google || !google.accounts || !google.accounts.id) {
-    setTimeout(renderGoogleButton, 200);
+    setTimeout(() => renderGoogleButton(slotId, large), 200);
     return;
   }
   google.accounts.id.initialize({
     client_id: GOOGLE_CLIENT_ID,
     callback: handleGoogleCredential,
   });
-  const slot = document.getElementById('g-signin-slot');
+  const slot = document.getElementById(slotId);
   if (slot) {
     slot.innerHTML = '';
-    google.accounts.id.renderButton(slot, {theme:'outline', size:'small', text:'signin', shape:'pill'});
+    google.accounts.id.renderButton(slot, {
+      theme: 'filled_blue',
+      size: large ? 'large' : 'medium',
+      text: 'signin_with',
+      shape: 'rectangular',
+      logo_alignment: 'left',
+      width: large ? 280 : undefined,
+    });
   }
 }
 
@@ -720,17 +789,17 @@ async function handleGoogleCredential(response) {
     });
     if (!r.ok) {
       const err = await r.json().catch(()=>({detail:'unknown'}));
-      alert('로그인 실패: ' + (err.detail || r.status));
+      showGate('로그인 실패: ' + (err.detail || r.status));
       return;
     }
     const data = await r.json();
     authToken = data.token; authEmail = data.email;
     localStorage.setItem('mo-token', authToken);
     localStorage.setItem('mo-email', authEmail);
-    updateAuthUI();
+    showApp();
     loadLiveData();
   } catch (e) {
-    alert('로그인 오류: ' + e.message);
+    showGate('로그인 오류: ' + e.message);
   }
 }
 
@@ -738,9 +807,7 @@ function logout() {
   authToken = ''; authEmail = '';
   localStorage.removeItem('mo-token');
   localStorage.removeItem('mo-email');
-  updateAuthUI();
-  setDataSource('mock');
-  location.reload();
+  showGate();
 }
 
 async function apiFetch(path) {
@@ -826,15 +893,17 @@ function backendToApp(r) {
 }
 
 async function loadLiveData(force) {
+  if (!authToken) { showGate(); return; }
   try {
-    const headers = authToken ? {'Authorization': 'Bearer ' + authToken} : {};
-    const r = await fetch(API_BASE + '/api/applications?limit=30', { headers });
+    const r = await fetch(API_BASE + '/api/applications?limit=30', {
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
     if (r.status === 401) {
       authToken = ''; authEmail = '';
       localStorage.removeItem('mo-token');
       localStorage.removeItem('mo-email');
-      updateAuthUI();
-      setDataSource('mock'); return;
+      showGate('세션이 만료되었습니다. 다시 로그인해주세요.');
+      return;
     }
     if (!r.ok) throw new Error('api-error ' + r.status);
     const data = await r.json();
@@ -1274,9 +1343,15 @@ function deriveInsights() {
 }
 
 // ====== INIT ======
-render();
-updateAuthUI();
-loadLiveData();
+// 초기 진입: 토큰 있으면 앱 + 데이터 fetch, 없으면 게이트
+if (authToken) {
+  showApp();
+  render();
+  loadLiveData();
+} else {
+  render();
+  showGate();
+}
 </script>
 </body>
 </html>
