@@ -56,6 +56,13 @@ class JarandaReplica:
               r.matched_teacher_name,
               r.estimated_charge,
               r.parent_request_to_teacher,
+              r.biweekly,
+              r.regular_visit_term,
+              r.requested_first_visit_schedule,
+              r.preferable_teacher_gender,
+              r.preferable_teacher_characteristics,
+              r.parent_address,
+              r.requested_teacher_name,
               p.policy_name,
               (
                 SELECT COUNT(*)
@@ -107,6 +114,13 @@ class JarandaReplica:
               r.matched_teacher_name,
               r.estimated_charge,
               r.parent_request_to_teacher,
+              r.biweekly,
+              r.regular_visit_term,
+              r.requested_first_visit_schedule,
+              r.preferable_teacher_gender,
+              r.preferable_teacher_characteristics,
+              r.parent_address,
+              r.requested_teacher_name,
               p.policy_name,
               (
                 SELECT COUNT(*)

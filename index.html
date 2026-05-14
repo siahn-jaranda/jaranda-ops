@@ -176,6 +176,32 @@ tbody tr:last-child td { border-bottom: none; }
   min-width: 0; overflow: hidden;
 }
 .rcard-app { background: #E1F5EE; }
+
+/* 디자인 핸드오프: DeadlineTag */
+.dl-tag {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 6px;
+  font-size: 10.5px; font-weight: 600; line-height: 1.4;
+  white-space: nowrap;
+}
+.dl-tag.dl-urgent { background: #FBE0DC; color: #A4271A; }
+.dl-tag.dl-soon   { background: #FDF0CC; color: #8A5B00; }
+.dl-tag.dl-ok     { background: #EEF1F4; color: #4B5563; }
+
+/* 요청 칩 (정형 조건들) */
+.rc-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.rc-chip {
+  font-size: 10px; line-height: 1.4;
+  padding: 1px 6px; border-radius: 99px;
+  background: rgba(0,0,0,0.05); color: var(--text2);
+}
+
+/* placeholder: 후속 연결 예정 데이터 표시 */
+.ph {
+  font-size: 11px; font-style: italic; color: var(--text3);
+  background: var(--surface2); border: 1px dashed var(--border2);
+  padding: 1px 6px; border-radius: 4px;
+}
 .rcard-history { background: #FAEEDA; }
 .rcard-rec { background: #FAEEDA; }
 .rcard-teacher { background: #F2F4B0; }
@@ -1052,9 +1078,13 @@ function renderTable() {
       <div class="data-row${isActive?' active':''}" id="row-${r.key}" onclick="toggleDetail('${r.key}')">
 
         <div class="rcard rcard-app">
-          <div class="rc-title">${r.sid}</div>
+          <div class="rc-row-flex">
+            <span class="rc-title">${r.sid}</span>
+            ${r.deadlineLabel ? `<span class="dl-tag dl-${r.deadlineState||'ok'}">⏱ ${r.deadlineLabel}</span>` : ''}
+          </div>
           <div class="rc-sub">${r.sub.split('·')[0].trim()} · ${r.sub.split('·')[1]?.trim()||''}</div>
-          <div class="rc-meta">${region} · 접수 ${r.date}</div>
+          <div class="rc-meta">${r.region || region} · 접수 ${r.date}</div>
+          ${(r.requestChips && r.requestChips.length) ? `<div class="rc-chips">${r.requestChips.slice(0,3).map(c => `<span class="rc-chip">${c}</span>`).join('')}</div>` : ''}
         </div>
 
         <div class="rcard rcard-history">
@@ -1070,6 +1100,7 @@ function renderTable() {
           <div class="rc-title" style="font-size:11px">${r.assignee}</div>
           <div class="rc-meta">요청 <span class="rc-num">${r.reqCount}명</span></div>
           <div class="rc-meta">지원 <span class="${r.applyCount>0?'rc-num':'rc-num-mute'}">${r.applyCount}명</span></div>
+          ${r.requestedTeacherName ? `<div class="rc-meta">지명 <span class="rc-num">${r.requestedTeacherName}</span></div>` : ''}
         </div>
 
         ${slot1HTML}
@@ -1199,34 +1230,41 @@ function buildDetailHTML(d) {
           <div class="dcard">
             <div class="dcard-title">신청서 기본</div>
             <div class="info-row"><span class="info-key">학년·과목</span><span class="info-val">${grade} · ${subject}</span></div>
-            <div class="info-row"><span class="info-key">지역</span><span class="info-val">${region}</span></div>
-            <div class="info-row"><span class="info-key">희망 단가</span><span class="info-val">${d.price||'—'}</span></div>
-            <div class="info-row"><span class="info-key">요청사항</span><span class="info-val">${d.request||'—'}</span></div>
+            <div class="info-row"><span class="info-key">지역</span><span class="info-val">${d.region || region || '—'}</span></div>
+            <div class="info-row"><span class="info-key">예상 단가</span><span class="info-val">${d.price||'—'}</span></div>
             <div class="info-row"><span class="info-key">접수일시</span><span class="info-val">${d.date}</span></div>
+            ${d.requestedTeacherName ? `<div class="info-row"><span class="info-key">지명 선생님</span><span class="info-val">${d.requestedTeacherName}</span></div>` : ''}
+            ${(d.requestChips && d.requestChips.length) ? `
+              <div class="info-row" style="align-items:flex-start"><span class="info-key">조건</span><span class="info-val rc-chips">${d.requestChips.map(c=>`<span class="rc-chip">${c}</span>`).join('')}</span></div>
+            ` : ''}
+            ${d.request ? `
+              <div class="info-row" style="flex-direction:column;align-items:flex-start;gap:4px"><span class="info-key">요청사항</span><span class="info-val" style="white-space:pre-wrap;color:var(--text)">${d.request}</span></div>
+            ` : ''}
           </div>
 
           <div class="dcard">
             <div class="dcard-title">고객 이력</div>
-            <div class="info-row"><span class="info-key">구분</span><span class="info-val">${d.isNew?'신규':'재방문'}</span></div>
-            <div class="info-row"><span class="info-key">작성 회차</span><span class="info-val">${d.appCount}번째</span></div>
-            <div class="info-row"><span class="info-key">누적 확정</span><span class="info-val">${d.confirmedCount}회</span></div>
-            <div class="info-row"><span class="info-key">누적 수업</span><span class="info-val">${d.lessonCount}회</span></div>
-            <div class="info-row"><span class="info-key">작성 후 앱 진입</span><span class="info-val">${d.visitsAfter}회</span></div>
+            <div class="info-row"><span class="info-key">구분</span><span class="info-val">${d.isNew===true?'신규':d.isNew===false?'재방문':'—'}</span></div>
+            <div class="info-row"><span class="info-key">작성 회차</span><span class="info-val">${d.appCount!=null?d.appCount+'번째':'<span class="ph">집계 예정</span>'}</span></div>
+            <div class="info-row"><span class="info-key">누적 확정</span><span class="info-val">${d.confirmedCount!=null?d.confirmedCount+'회':'<span class="ph">집계 예정</span>'}</span></div>
+            <div class="info-row"><span class="info-key">누적 수업</span><span class="info-val">${d.lessonCount!=null?d.lessonCount+'회':'<span class="ph">집계 예정</span>'}</span></div>
+            <div class="info-row"><span class="info-key">작성 후 앱 진입</span><span class="info-val">${d.visitsAfter!=null?d.visitsAfter+'회':'<span class="ph">이벤트 연동 예정</span>'}</span></div>
           </div>
 
           <div class="dcard">
             <div class="dcard-title">매칭 진행</div>
             <div class="info-row"><span class="info-key">담당자</span><span class="info-val">${d.assignee}</span></div>
-            <div class="info-row"><span class="info-key">자동취소까지</span><span class="info-val">${timerLabel(d.timerMin)}</span></div>
+            <div class="info-row"><span class="info-key">마감까지</span><span class="info-val">${d.deadlineLabel||timerLabel(d.timerMin)} ${d.deadlineState?`<span class="dl-tag dl-${d.deadlineState}" style="margin-left:6px">${d.deadlineState==='urgent'?'임박':d.deadlineState==='soon'?'주의':'여유'}</span>`:''}</span></div>
             <div class="info-row"><span class="info-key">요청 발송</span><span class="info-val">${d.reqCount}명</span></div>
             <div class="info-row"><span class="info-key">지원 수락</span><span class="info-val">${d.applyCount}명</span></div>
-            <div class="info-row"><span class="info-key">매칭 확률</span><span class="info-val" style="color:${probColor(d.prob)};font-weight:600">${d.prob}%</span></div>
+            <div class="info-row"><span class="info-key">매칭 확률</span><span class="info-val">${d.prob!=null?`<span style="color:${probColor(d.prob)};font-weight:600">${d.prob}%</span>`:'<span class="ph">LLM 예측 예정</span>'}</span></div>
             <div class="info-row"><span class="info-key">확정시간</span><span class="info-val">${d.confirmed}</span></div>
+            ${d.matchedTeacher ? `<div class="info-row"><span class="info-key">매칭된 선생님</span><span class="info-val">${d.matchedTeacher}</span></div>` : ''}
           </div>
 
           <div class="dcard">
             <div class="dcard-title">액션 타임라인</div>
-            <div class="timeline">${timelineHTML}</div>
+            <div class="timeline">${timelineHTML || '<div class="ph">타임라인 데이터 연결 예정</div>'}</div>
           </div>
         </div>
       </div>
