@@ -1009,7 +1009,6 @@ function buildDetailHTML(d) {
             </div>
             <div style="display:flex;gap:6px">
               <button class="btn" onclick="event.stopPropagation();alert('${t.name} 프로필 보기 (구현 예정)')">프로필 보기</button>
-              <button class="btn btn-primary" onclick="event.stopPropagation();confirmTeacher('${d.key}','${t.name}')">이 선생님 확정 알림톡</button>
             </div>
           ` : ''}
         </div>
@@ -1088,7 +1087,6 @@ function buildDetailHTML(d) {
       <div class="action-btns">
         <button class="btn btn-primary" onclick="event.stopPropagation();confirmTeacher('${d.key}')">부모님께 확정 알림톡 발송</button>
         <button class="btn" onclick="event.stopPropagation();alert('추가 알림 발송 (구현 예정)')">추가 알림 발송</button>
-        <button class="btn" style="margin-left:auto;color:var(--red);border-color:var(--red)" onclick="event.stopPropagation();alert('취소 처리 (구현 예정)')">취소 처리</button>
       </div>
 
       <div class="memo-area">
