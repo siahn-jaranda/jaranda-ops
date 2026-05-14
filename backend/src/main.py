@@ -1,0 +1,49 @@
+"""matching-ops-api FastAPI 엔트리포인트.
+
+자란다 매칭 운영 대시보드(matching-ops Cloud Run)의 데이터 소스 백엔드.
+read replica MySQL 직접 조회 — 쓰기 작업 없음.
+인증: Google OAuth (@jaranda.kr).
+"""
+from __future__ import annotations
+
+import logging
+
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from src import auth
+from src.config import settings
+from src.routes import applications
+
+logging.basicConfig(level=settings.log_level)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="matching-ops-api",
+    description="자란다 매칭 운영 대시보드 백엔드 (read-only)",
+    version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.origins_list,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+# 인증 routes (로그인은 토큰 없이 호출)
+app.include_router(auth.router)
+
+# 데이터 routes — Google OAuth 세션 토큰 필수 (auth_required=true 일 때)
+app.include_router(applications.router, dependencies=[Depends(auth.require_auth)])
+
+
+@app.get("/")
+async def root() -> dict[str, str]:
+    return {"service": "matching-ops-api", "status": "ok"}
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
