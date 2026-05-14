@@ -71,12 +71,10 @@ html, body {
 
 /* LIST PANEL */
 .list-panel {
-  width: 100%; flex-shrink: 0;
+  width: 100%;
   display: flex; flex-direction: column;
   overflow: hidden;
-  transition: width .25s ease;
 }
-.list-panel.with-detail { width: 56%; }
 
 .list-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -137,14 +135,139 @@ tbody tr:last-child td { border-bottom: none; }
 .prob-val { font-size: 12px; font-weight: 500; }
 
 /* DETAIL PANEL */
-.detail-panel {
-  width: 0; flex-shrink: 0; overflow: hidden;
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  display: flex; flex-direction: column;
-  transition: width .25s ease;
+/* CARD-ROW STRIP */
+.row-strip-header {
+  display: grid;
+  grid-template-columns: 1.5fr 1.3fr 0.85fr 1.45fr 1.45fr 0.7fr 1.1fr 1.15fr;
+  gap: 6px; padding: 6px 14px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 600; color: var(--text3);
+  letter-spacing: .06em; text-transform: uppercase;
+  position: sticky; top: 0; z-index: 2;
 }
-.detail-panel.open { width: 44%; }
+.rsh { padding: 0 8px; }
+
+.rows-scroll { overflow-y: auto; flex: 1; }
+.data-rows { display: flex; flex-direction: column; }
+
+.data-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1.3fr 0.85fr 1.45fr 1.45fr 0.7fr 1.1fr 1.15fr;
+  gap: 6px; padding: 8px 14px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  min-height: 70px;
+  transition: background .12s;
+}
+.data-row:hover { background: var(--surface2); }
+.data-row.active { background: var(--green-bg); border-bottom-color: transparent; }
+
+.rcard {
+  padding: 8px 10px; border-radius: 8px;
+  font-size: 11px; line-height: 1.4;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; overflow: hidden;
+}
+.rcard-app { background: #E1F5EE; }
+.rcard-history { background: #FAEEDA; }
+.rcard-rec { background: #FAEEDA; }
+.rcard-teacher { background: #F2F4B0; }
+.rcard-teacher.empty {
+  background: transparent;
+  border: 1px dashed var(--border2);
+  align-items: center; justify-content: center;
+}
+.rcard-teacher.empty::before {
+  content: '미지원'; color: var(--text3); font-size: 11px;
+}
+.rcard-more {
+  background: var(--surface2);
+  align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; color: var(--text);
+}
+.rcard-more.zero { color: var(--text3); font-weight: 400; }
+
+.viewed-pill {
+  display: inline-block; font-size: 10px; font-weight: 500;
+  padding: 1px 6px; border-radius: 99px;
+}
+.viewed-pill.on { background: var(--green); color: #fff; }
+.viewed-pill.off { background: var(--surface2); color: var(--text3); }
+
+/* DETAIL 4-CARDS */
+.detail-4-cards {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+.dcard {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px;
+}
+.dcard-title {
+  font-size: 11px; font-weight: 600; color: var(--text2);
+  letter-spacing: .06em; text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* TEACHER DETAIL CARD */
+.teacher-cards-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.teacher-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.tc-header { display: flex; align-items: center; gap: 10px; }
+.tc-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--green-bg); color: var(--green-text);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 14px; flex-shrink: 0;
+}
+.tc-name-block { flex: 1; min-width: 0; }
+.tc-name { font-size: 13px; font-weight: 600; }
+.tc-stat { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.tc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tc-stat-item {
+  background: var(--surface); border-radius: var(--radius);
+  padding: 8px 10px;
+}
+.tc-stat-lbl { font-size: 10px; color: var(--text3); margin-bottom: 2px; }
+.tc-stat-val { font-size: 13px; font-weight: 600; color: var(--text); }
+.tc-stat-val .star { color: var(--amber); }
+
+.link-original {
+  font-size: 12px; color: var(--blue); text-decoration: none;
+  padding: 4px 10px; border: 1px solid var(--blue);
+  border-radius: var(--radius); margin-left: 8px;
+}
+.link-original:hover { background: var(--blue-bg); }
+.rcard-result { background: #D4EDE4; }
+.rcard-action { background: #E6F1FB; }
+
+.rc-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.rc-sub { font-size: 11px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-meta { font-size: 10px; color: var(--text3); }
+.rc-row-flex { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rc-num { font-weight: 600; color: var(--text); }
+.rc-num-mute { color: var(--text3); }
+.rc-stat-ok { color: var(--green-text); font-weight: 500; }
+.rc-stat-warn { color: var(--amber-text); font-weight: 500; }
+.rc-stat-bad { color: var(--red-text); font-weight: 500; }
+.rc-stat-mute { color: var(--text3); }
+
+.detail-block {
+  background: var(--surface);
+  border-top: 1px solid var(--green);
+  border-bottom: 1px solid var(--border);
+}
+.detail-inline { display: flex; flex-direction: column; }
+.detail-inline .dp-header,
+.detail-inline .insight-box,
+.detail-inline .dp-section,
+.detail-inline .action-btns,
+.detail-inline .memo-area { padding-left: 24px; padding-right: 24px; }
+.detail-inline .insight-box { margin-left: 24px; margin-right: 24px; padding-left: 12px; padding-right: 12px; }
 
 .dp-header {
   padding: 14px 18px 12px;
@@ -257,6 +380,15 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .btn-close:hover { color: var(--text); background: var(--surface2); }
 
+.filter-select {
+  height: 30px; padding: 0 26px 0 10px; font-size: 12px; font-family: var(--sans);
+  background: var(--surface) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%236B6861' d='M0 0l5 6 5-6z'/></svg>") no-repeat right 10px center;
+  color: var(--text); border: 1px solid var(--border2); border-radius: var(--radius);
+  cursor: pointer; font-weight: 500; appearance: none;
+}
+.filter-select:hover { background-color: var(--surface2); }
+.filter-select:focus { outline: none; border-color: var(--green); }
+
 .action-btns { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); flex-shrink: 0; }
 
 /* SCROLLBAR */
@@ -267,6 +399,109 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* EMPTY */
 .no-teacher { font-size: 12px; color: var(--text3); padding: 4px 0; }
+
+/* TABS */
+.tabs { display: flex; gap: 2px; margin-left: 4px; }
+.tab {
+  background: transparent; border: none; cursor: pointer;
+  padding: 6px 12px; border-radius: 6px;
+  font-size: 13px; font-weight: 500; color: var(--text2);
+  font-family: var(--sans);
+}
+.tab:hover { background: var(--surface2); color: var(--text); }
+.tab.active { background: #085041; color: #fff; }
+
+/* PAGES */
+.page { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* INSIGHT PAGE */
+.page-insight { display: none; overflow-y: auto; background: var(--bg); }
+.page-insight.active { display: flex; }
+
+.insight-head { padding: 20px 24px 12px; flex-shrink: 0; }
+.insight-head h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.insight-head p { font-size: 12px; color: var(--text2); }
+
+.insight-grid {
+  display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px;
+  padding: 0 24px 16px;
+}
+@media (max-width: 1100px) { .insight-grid { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.card + .card { margin-top: 12px; }
+
+.memo-write select, .memo-write textarea,
+.feed-filters select {
+  font-family: var(--sans); font-size: 12px;
+  border: 1px solid var(--border2); border-radius: var(--radius);
+  padding: 6px 10px; background: var(--surface); color: var(--text);
+}
+.memo-write textarea {
+  width: 100%; min-height: 64px; resize: vertical; line-height: 1.5;
+}
+.memo-write textarea:focus, .memo-write select:focus,
+.feed-filters select:focus { outline: none; border-color: var(--green); }
+.memo-write-row { display: flex; gap: 8px; align-items: center; }
+
+.feed-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.memo-feed-list { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; }
+.feed-item {
+  background: var(--bg); border-radius: var(--radius);
+  padding: 10px 12px; border-left: 3px solid var(--border2);
+}
+.feed-item.tag-지역 { border-left-color: var(--blue); }
+.feed-item.tag-신규부모님 { border-left-color: var(--amber); }
+.feed-item.tag-재이용 { border-left-color: var(--green); }
+.feed-item.tag-응답속도 { border-left-color: var(--red); }
+.feed-item.tag-신청서 { border-left-color: var(--text3); }
+.feed-meta { display: flex; gap: 8px; font-size: 11px; color: var(--text3); margin-bottom: 4px; align-items: center; }
+.feed-meta .tag-pill {
+  background: var(--surface2); color: var(--text2);
+  padding: 1px 6px; border-radius: 99px; font-weight: 500;
+}
+.feed-meta .source-pill {
+  font-family: var(--mono); color: var(--text2);
+}
+.feed-txt { font-size: 12px; line-height: 1.55; color: var(--text); }
+
+.insight-empty { font-size: 12px; color: var(--text3); padding: 16px 0; text-align: center; }
+.insight-loading { font-size: 12px; color: var(--text2); padding: 16px 0; text-align: center; }
+
+.toplines { display: flex; flex-direction: column; gap: 4px; }
+.topline {
+  font-size: 12px; color: var(--text); padding: 6px 10px;
+  background: var(--surface2); border-radius: var(--radius);
+}
+.theme-list { display: flex; flex-direction: column; gap: 10px; }
+.theme-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px; background: var(--bg);
+}
+.theme-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.theme-title { font-size: 13px; font-weight: 600; }
+.theme-count {
+  font-size: 11px; background: var(--green-bg); color: var(--green-text);
+  padding: 2px 8px; border-radius: 99px; font-weight: 500;
+}
+.theme-summary { font-size: 12px; color: var(--text2); line-height: 1.55; margin-bottom: 6px; }
+.theme-action { font-size: 12px; color: var(--text); padding: 6px 8px; background: var(--surface); border-radius: var(--radius); }
+.theme-action strong { color: var(--green-text); margin-right: 4px; font-weight: 600; }
+.derive-meta { font-size: 11px; color: var(--text3); padding-top: 8px; border-top: 1px solid var(--border); margin-top: 8px; }
+
+.history-list { display: flex; flex-direction: column; gap: 8px; }
+.history-item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 12px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.history-item-left { display: flex; flex-direction: column; gap: 2px; }
+.history-item-title { font-size: 12px; font-weight: 500; }
+.history-item-meta { font-size: 11px; color: var(--text3); }
 </style>
 </head>
 <body>
@@ -276,18 +511,21 @@ tbody tr:last-child td { border-bottom: none; }
   <div class="topbar">
     <div class="topbar-left">
       <span class="brand">자란다 OPS</span>
-      <div>
-        <div class="page-title">매칭 신청서 관리</div>
-        <div class="page-sub">수동 매칭 진행 · 기록 관리</div>
-      </div>
+      <nav class="tabs">
+        <button class="tab active" data-page="matching" onclick="switchPage('matching')">매칭 신청서 관리</button>
+        <button class="tab" data-page="insight" onclick="switchPage('insight')">인사이트 도출</button>
+      </nav>
     </div>
     <div class="topbar-right">
       <span class="topbar-meta" id="live-time"></span>
-      <button class="btn btn-primary" onclick="alert('신규 신청서 등록 화면 (구현 예정)')">+ 신규 신청서</button>
+      <button class="btn btn-primary" id="new-app-btn" onclick="alert('신규 신청서 등록 화면 (구현 예정)')">+ 신규 신청서</button>
     </div>
   </div>
 
   <div class="main">
+
+  <!-- ============== PAGE: MATCHING ============== -->
+  <section class="page page-matching" id="page-matching">
 
     <!-- LIST PANEL -->
     <div class="list-panel" id="list-panel">
@@ -295,6 +533,9 @@ tbody tr:last-child td { border-bottom: none; }
         <div class="list-header-left">
           <span style="font-size:13px;font-weight:600">전체 신청서</span>
           <span class="list-count" id="list-count">5건</span>
+          <select class="filter-select" id="assignee-filter" onchange="filterByAssignee(this.value)">
+            <option value="">담당자 전체</option>
+          </select>
         </div>
         <div style="display:flex;gap:6px">
           <button class="btn" onclick="sortBy('timer')">⏱ 취소임박순</button>
@@ -303,78 +544,104 @@ tbody tr:last-child td { border-bottom: none; }
         </div>
       </div>
 
-      <div class="tbl-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:82px">SID</th>
-              <th style="width:58px">이용기록</th>
-              <th style="width:90px">접수일시</th>
-              <th style="width:72px">상태</th>
-              <th style="width:54px">담당자</th>
-              <th style="width:78px">자동취소까지</th>
-              <th style="width:50px">요청수</th>
-              <th style="width:64px">응답시간</th>
-              <th style="width:72px">확정시간</th>
-              <th style="width:72px">매칭확률</th>
-              <th style="width:56px">매칭결과</th>
-            </tr>
-          </thead>
-          <tbody id="tbl-body"></tbody>
-        </table>
+      <div class="row-strip-header">
+        <div class="rsh">신청서</div>
+        <div class="rsh">고객 이력</div>
+        <div class="rsh">추천 log</div>
+        <div class="rsh">선생님 1</div>
+        <div class="rsh">선생님 2</div>
+        <div class="rsh">추가 지원</div>
+        <div class="rsh">결과</div>
+        <div class="rsh">최근 액션</div>
+      </div>
+      <div class="rows-scroll">
+        <div class="data-rows" id="data-rows"></div>
       </div>
     </div>
 
-    <!-- DETAIL PANEL -->
-    <div class="detail-panel" id="detail-panel">
-      <div class="dp-header">
-        <div class="dp-header-top">
-          <div>
-            <div class="dp-title" id="dp-title"></div>
-            <div class="dp-sub" id="dp-sub"></div>
+  </section>
+
+  <!-- ============== PAGE: INSIGHT ============== -->
+  <section class="page page-insight" id="page-insight">
+    <div class="insight-head">
+      <h2>인사이트 도출</h2>
+      <p>담당자 메모를 모아 LLM이 패턴·시사점을 도출합니다.</p>
+    </div>
+
+    <div class="insight-grid">
+
+      <!-- LEFT: 메모 입력 + 피드 -->
+      <div>
+        <div class="card memo-write">
+          <div class="sec-lbl">메모 작성</div>
+          <div class="memo-write-row">
+            <select id="memo-author"></select>
+            <select id="memo-tag">
+              <option value="지역">지역</option>
+              <option value="신규부모님">신규부모님</option>
+              <option value="재이용">재이용</option>
+              <option value="응답속도">응답속도</option>
+              <option value="기타">기타</option>
+            </select>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span id="dp-status-bdg"></span>
-            <button class="btn-close" onclick="closeDetail()" aria-label="닫기">×</button>
+          <textarea id="memo-text" placeholder="떠오르는 생각, 패턴, 가설을 자유롭게 적어주세요..."></textarea>
+          <div style="display:flex;justify-content:flex-end">
+            <button class="btn btn-primary" onclick="addGlobalMemo()">메모 저장</button>
           </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+            <div class="sec-lbl" style="margin:0">메모 피드 <span id="feed-count" style="color:var(--text2);font-weight:400;text-transform:none;letter-spacing:0">· 0건</span></div>
+            <div class="feed-filters">
+              <select id="filter-author" onchange="renderMemoFeed()"><option value="">작성자 전체</option></select>
+              <select id="filter-tag" onchange="renderMemoFeed()">
+                <option value="">태그 전체</option>
+                <option value="지역">지역</option>
+                <option value="신규부모님">신규부모님</option>
+                <option value="재이용">재이용</option>
+                <option value="응답속도">응답속도</option>
+                <option value="신청서">신청서</option>
+                <option value="기타">기타</option>
+              </select>
+              <select id="filter-source" onchange="renderMemoFeed()">
+                <option value="">출처 전체</option>
+                <option value="자유">자유 메모</option>
+                <option value="신청서">신청서 메모</option>
+              </select>
+            </div>
+          </div>
+          <div class="memo-feed-list" id="memo-feed-list"></div>
         </div>
       </div>
 
-      <div class="dp-scroll">
-        <div id="dp-insight"></div>
-
-        <div class="dp-section" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;border-bottom:1px solid var(--border)">
-          <div>
-            <div class="sec-lbl">신청서 정보</div>
-            <div id="dp-info"></div>
+      <!-- RIGHT: LLM 인사이트 -->
+      <div>
+        <div class="card">
+          <div class="sec-lbl">LLM 인사이트 도출</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.55">
+            현재 피드에 표시된 메모 <strong id="derive-count">0</strong>건을 묶어 테마 클러스터·핵심 인사이트·제안 액션을 생성합니다.
           </div>
           <div>
-            <div class="sec-lbl">액션 타임라인</div>
-            <div class="timeline" id="dp-timeline"></div>
+            <button class="btn btn-primary" onclick="deriveInsights()">인사이트 도출하기</button>
           </div>
         </div>
 
-        <div class="dp-section">
-          <div class="sec-lbl">선생님 요청 현황</div>
-          <div id="dp-teachers"></div>
+        <div class="card" id="insight-result">
+          <div class="insight-empty">메모를 모아 "인사이트 도출하기"를 눌러주세요.</div>
         </div>
       </div>
 
-      <div class="action-btns">
-        <button class="btn btn-primary" onclick="alert('선생님 선택 후 발송 화면 (구현 예정)')">선생님 선택 후 발송</button>
-        <button class="btn" onclick="alert('추가 알림 발송 (구현 예정)')">추가 알림 발송</button>
-        <button class="btn" style="margin-left:auto;color:var(--red);border-color:var(--red)" onclick="alert('매칭 취소 처리 (구현 예정)')">취소 처리</button>
-      </div>
+    </div>
 
-      <div class="memo-area">
-        <div class="sec-lbl">담당자 메모</div>
-        <div class="memo-list" id="dp-memos"></div>
-        <div class="memo-input-row">
-          <textarea id="memo-input" placeholder="이 신청서에 대한 메모를 남겨주세요..."></textarea>
-          <button class="btn-save" onclick="addMemo()">저장</button>
-        </div>
+    <div class="insight-grid" style="grid-template-columns:1fr">
+      <div class="card">
+        <div class="sec-lbl">인사이트 히스토리</div>
+        <div class="history-list" id="history-list"></div>
       </div>
     </div>
+
+  </section>
 
   </div>
 </div>
@@ -382,137 +649,156 @@ tbody tr:last-child td { border-bottom: none; }
 <script>
 const ROWS = [
   {
-    key:'A', sid:'SID-2847', hist:'3회', histType:'이용',
-    date:'05/14 09:12', status:'진행중', assignee:'김지은',
-    timerMin: 83, reqCount:4, respAvg:'18분', confirmed:'—',
+    key:'A', sid:'SID-2847',
+    isNew:false, appCount:4, confirmedCount:3, lessonCount:12, visitsAfter:5, applyCount:3,
+    date:'05/14 09:12', status:'진행중', assignee:'신진섭',
+    timerMin: 83, reqCount:5, confirmed:'—',
+    price:'시급 25,000원', request:'여성 선생님 선호 · 마포구 거주 우대',
     prob:78, result:'—', resultType:'',
-    title:'SID-2847 · 김○○ 학부모', sub:'초등 3학년 · 수학 · 서울 마포구 · 접수 05/14 09:12',
+    title:'SID-2847 · 김민지 학부모', sub:'초등 3학년 · 수학 · 서울 마포구 · 접수 05/14 09:12',
     insightType:'ok',
     insightTitle:'매칭 인사이트 · 확률 78%',
     insightText:'이용 경험 3회 · 알림톡 수신 후 12분 내 접수. 과거 매칭 시 지역 근접 선생님 선호. 현재 응답 중인 선생님 2명 중 1명이 마포구 거주로 적합도 높음.',
     info:[
-      ['담당자','김지은'],['이용기록','3회 (재이용)'],['알림 채널','카카오 알림톡'],
+      ['담당자','신진섭'],['구분','재방문'],['알림 채널','카카오 알림톡'],
+      ['작성 회차','4번째'],['누적 확정','3회'],['누적 수업','12회'],
+      ['작성 후 앱 진입','5회'],['선생님 지원','2명 / 요청 4명'],
       ['알림→접수','12분'],['접수→요청발송','8분'],['자동취소까지','1h 23m 남음'],['확정시간','—'],['총 소요시간','진행중']
     ],
     teachers:[
-      {init:'박',name:'박○○',stat:'응답완료',resp:'13분',respColor:'var(--green)'},
-      {init:'이',name:'이○○',stat:'응답완료',resp:'23분',respColor:'var(--green)'},
-      {init:'최',name:'최○○',stat:'미응답',resp:'31분 경과',respColor:'var(--red)'},
-      {init:'정',name:'정○○',stat:'거절',resp:'—',respColor:'var(--text3)'},
+      {init:'박',name:'박지훈',stat:'응답완료',resp:'13분',respColor:'var(--green)',viewed:true,totalHours:280,subject:'수학',subjectHours:95,rating:4.8,reviewCount:32},
+      {init:'이',name:'이서연',stat:'응답완료',resp:'23분',respColor:'var(--green)',viewed:false,totalHours:410,subject:'수학',subjectHours:180,rating:4.9,reviewCount:58},
+      {init:'김',name:'김서아',stat:'응답완료',resp:'25분',respColor:'var(--green)',viewed:true,totalHours:340,subject:'수학',subjectHours:145,rating:4.85,reviewCount:42},
+      {init:'최',name:'최민호',stat:'미응답',resp:'31분 경과',respColor:'var(--red)'},
+      {init:'정',name:'정수아',stat:'거절',resp:'—',respColor:'var(--text3)'},
     ],
     timeline:[
       {dot:'#1D9E75',action:'알림톡 발송',time:'05/14 09:00',detail:'수업 요청 알림 발송'},
+      {dot:'#185FA5',action:'부모님앱 로그인',time:'05/14 09:08',detail:'iOS · 앱 v3.42.1 · 알림→로그인 8분'},
       {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 09:12',detail:'반응 소요 12분'},
-      {dot:'#185FA5',action:'담당자 배정',time:'05/14 09:15',detail:'김지은 배정'},
-      {dot:'#185FA5',action:'선생님 4명 요청 발송',time:'05/14 09:20',detail:'박○○, 이○○, 최○○, 정○○'},
-      {dot:'#1D9E75',action:'박○○ 수락',time:'05/14 09:33',detail:'응답 13분'},
-      {dot:'#1D9E75',action:'이○○ 수락',time:'05/14 09:43',detail:'응답 23분'},
-      {dot:'#A32D2D',action:'정○○ 거절',time:'05/14 09:44',detail:''},
+      {dot:'#185FA5',action:'담당자 배정',time:'05/14 09:15',detail:'신진섭 배정'},
+      {dot:'#185FA5',action:'선생님 5명 요청 발송',time:'05/14 09:20',detail:'박지훈, 이서연, 김서아, 최민호, 정수아'},
+      {dot:'#1D9E75',action:'박지훈 수락',time:'05/14 09:33',detail:'응답 13분'},
+      {dot:'#1D9E75',action:'이서연 수락',time:'05/14 09:43',detail:'응답 23분'},
+      {dot:'#1D9E75',action:'김서아 수락',time:'05/14 09:45',detail:'응답 25분'},
+      {dot:'#A32D2D',action:'정수아 거절',time:'05/14 09:47',detail:''},
       {dot:'#BA7517',action:'학부모 확인 대기중',time:'현재',detail:'수락 선생님 2명 대기'},
     ],
-    memos:[{who:'김지은 · 09:25',txt:'박○○ 선생님 마포구 거주 확인. 학부모 선호 조건 부합. 우선 추천 예정.'}]
+    memos:[{who:'신진섭 · 09:25',txt:'박지훈 선생님 마포구 거주 확인. 학부모 선호 조건 부합. 우선 추천 예정.'}]
   },
   {
-    key:'B', sid:'SID-2846', hist:'신규', histType:'신규',
-    date:'05/14 08:45', status:'진행중', assignee:'박수현',
-    timerMin: 187, reqCount:2, respAvg:'미응답', confirmed:'—',
+    key:'B', sid:'SID-2846',
+    isNew:true, appCount:1, confirmedCount:0, lessonCount:0, visitsAfter:1, applyCount:0,
+    date:'05/14 08:45', status:'진행중', assignee:'김지윤',
+    timerMin: 187, reqCount:2, confirmed:'—',
+    price:'시급 28,000원', request:'주 2회 영어 회화 위주 · 원어민 발음',
     prob:41, result:'—', resultType:'',
-    title:'SID-2846 · 이○○ 학부모', sub:'초등 5학년 · 영어 · 서울 서대문구 · 접수 05/14 08:45',
+    title:'SID-2846 · 이혜진 학부모', sub:'초등 5학년 · 영어 · 서울 서대문구 · 접수 05/14 08:45',
     insightType:'warn',
     insightTitle:'주의 · 확률 41%',
     insightText:'신규 학부모 · 요청 보낸 선생님 2명 모두 미응답 30분 초과. 추가 발송 필요. 동일 과목·지역 가용 선생님 3명 남아있음.',
     info:[
-      ['담당자','박수현'],['이용기록','신규'],['알림 채널','푸시 알림'],
+      ['담당자','김지윤'],['이용기록','신규'],['알림 채널','푸시 알림'],
       ['알림→접수','34분'],['접수→요청발송','15분'],['자동취소까지','3h 07m 남음'],['확정시간','—'],['총 소요시간','진행중']
     ],
     teachers:[
-      {init:'한',name:'한○○',stat:'미응답',resp:'42분 경과',respColor:'var(--red)'},
-      {init:'오',name:'오○○',stat:'미응답',resp:'38분 경과',respColor:'var(--red)'},
+      {init:'한',name:'한지원',stat:'미응답',resp:'42분 경과',respColor:'var(--red)'},
+      {init:'오',name:'오영민',stat:'미응답',resp:'38분 경과',respColor:'var(--red)'},
     ],
     timeline:[
       {dot:'#1D9E75',action:'푸시 알림 발송',time:'05/14 08:11',detail:'수업 요청 알림'},
+      {dot:'#185FA5',action:'부모님앱 로그인',time:'05/14 08:38',detail:'Android · 앱 v3.41.2 · 알림→로그인 27분 (신규 가입 직후)'},
       {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 08:45',detail:'반응 소요 34분'},
-      {dot:'#185FA5',action:'담당자 배정',time:'05/14 08:48',detail:'박수현 배정'},
-      {dot:'#185FA5',action:'선생님 2명 요청 발송',time:'05/14 09:00',detail:'한○○, 오○○'},
+      {dot:'#185FA5',action:'담당자 배정',time:'05/14 08:48',detail:'김지윤 배정'},
+      {dot:'#185FA5',action:'선생님 2명 요청 발송',time:'05/14 09:00',detail:'한지원, 오영민'},
       {dot:'#BA7517',action:'미응답 30분 초과',time:'05/14 09:30',detail:'추가 발송 필요'},
     ],
-    memos:[{who:'박수현 · 09:35',txt:'두 분 모두 미응답. 추가 발송 대상 확인 중. 서대문구 가용 선생님 3명 더 있음.'}]
+    memos:[{who:'김지윤 · 09:35',txt:'두 분 모두 미응답. 추가 발송 대상 확인 중. 서대문구 가용 선생님 3명 더 있음.'}]
   },
   {
-    key:'C', sid:'SID-2845', hist:'7회', histType:'이용',
-    date:'05/14 07:30', status:'매칭완료', assignee:'김지은',
-    timerMin: null, reqCount:3, respAvg:'9분', confirmed:'11:04',
+    key:'C', sid:'SID-2845',
+    isNew:false, appCount:8, confirmedCount:7, lessonCount:38, visitsAfter:3, applyCount:2,
+    date:'05/14 07:30', status:'매칭완료', assignee:'노태효',
+    timerMin: null, reqCount:3, confirmed:'11:04',
+    price:'시급 30,000원', request:'재이용 · 30대 여성 선생님 선호',
     prob:91, result:'성공', resultType:'ok',
-    title:'SID-2845 · 최○○ 학부모', sub:'초등 2학년 · 영어 · 서울 강남구 · 접수 05/14 07:30',
+    title:'SID-2845 · 최은영 학부모', sub:'초등 2학년 · 영어 · 서울 강남구 · 접수 05/14 07:30',
     insightType:'ok',
     insightTitle:'매칭 완료 · 성공 이유',
     insightText:'이용 7회 재이용 고객. 과거 선호 선생님 스타일(여성·30대·영어 전공) 부합. 요청 3명 중 가장 빠르게 응답한 선생님으로 확정. 접수→확정 3h 34m.',
     info:[
-      ['담당자','김지은'],['이용기록','7회 (재이용)'],['알림 채널','카카오 알림톡'],
+      ['담당자','노태효'],['이용기록','7회 (재이용)'],['알림 채널','카카오 알림톡'],
       ['알림→접수','8분'],['접수→요청발송','6분'],['자동취소까지','—'],['확정시간','05/14 11:04'],['총 소요시간','3h 34m']
     ],
     teachers:[
-      {init:'강',name:'강○○',stat:'수락 → 확정',resp:'7분',respColor:'var(--green)'},
-      {init:'윤',name:'윤○○',stat:'수락 (미선택)',resp:'11분',respColor:'var(--text2)'},
-      {init:'장',name:'장○○',stat:'거절',resp:'—',respColor:'var(--text3)'},
+      {init:'강',name:'강서윤',stat:'수락 → 확정',resp:'7분',respColor:'var(--green)',viewed:true,totalHours:520,subject:'영어',subjectHours:220,rating:4.95,reviewCount:71},
+      {init:'윤',name:'윤다인',stat:'수락 (미선택)',resp:'11분',respColor:'var(--text2)',viewed:true,totalHours:95,subject:'영어',subjectHours:40,rating:4.6,reviewCount:12},
+      {init:'장',name:'장현우',stat:'거절',resp:'—',respColor:'var(--text3)'},
     ],
     timeline:[
       {dot:'#1D9E75',action:'알림톡 발송',time:'05/14 07:22',detail:''},
+      {dot:'#185FA5',action:'부모님앱 로그인',time:'05/14 07:27',detail:'iOS · 앱 v3.42.1 · 알림→로그인 5분 (재이용 고객)'},
       {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/14 07:30',detail:'반응 소요 8분'},
-      {dot:'#185FA5',action:'선생님 3명 요청 발송',time:'05/14 07:36',detail:'강○○, 윤○○, 장○○'},
-      {dot:'#1D9E75',action:'강○○ 수락',time:'05/14 07:43',detail:'응답 7분'},
-      {dot:'#1D9E75',action:'윤○○ 수락',time:'05/14 07:47',detail:'응답 11분'},
-      {dot:'#A32D2D',action:'장○○ 거절',time:'05/14 07:50',detail:''},
-      {dot:'#1D9E75',action:'학부모 강○○ 확정',time:'05/14 11:04',detail:'접수→확정 3h 34m'},
+      {dot:'#185FA5',action:'선생님 3명 요청 발송',time:'05/14 07:36',detail:'강서윤, 윤다인, 장현우'},
+      {dot:'#1D9E75',action:'강서윤 수락',time:'05/14 07:43',detail:'응답 7분'},
+      {dot:'#1D9E75',action:'윤다인 수락',time:'05/14 07:47',detail:'응답 11분'},
+      {dot:'#A32D2D',action:'장현우 거절',time:'05/14 07:50',detail:''},
+      {dot:'#1D9E75',action:'학부모 강서윤 확정',time:'05/14 11:04',detail:'접수→확정 3h 34m'},
     ],
     memos:[
-      {who:'김지은 · 07:40',txt:'7회 재이용. 과거 여성 선생님 선호 이력 있어 강○○ 우선 노출.'},
-      {who:'김지은 · 11:10',txt:'강○○ 선생님으로 확정 완료. 학부모 응대 만족도 높았음.'},
+      {who:'노태효 · 07:40',txt:'7회 재이용. 과거 여성 선생님 선호 이력 있어 강서윤 우선 노출.'},
+      {who:'노태효 · 11:10',txt:'강서윤 선생님으로 확정 완료. 학부모 응대 만족도 높았음.'},
     ]
   },
   {
-    key:'D', sid:'SID-2844', hist:'신규', histType:'신규',
-    date:'05/13 16:20', status:'취소', assignee:'이민호',
-    timerMin: null, reqCount:1, respAvg:'미응답', confirmed:'—',
+    key:'D', sid:'SID-2844',
+    isNew:true, appCount:1, confirmedCount:0, lessonCount:0, visitsAfter:0, applyCount:0,
+    date:'05/13 16:20', status:'취소', assignee:'김성환',
+    timerMin: null, reqCount:1, confirmed:'—',
+    price:'시급 26,000원', request:'초보 선생님 가능 · 고양시 거주 우대',
     prob:29, result:'실패', resultType:'fail',
-    title:'SID-2844 · 정○○ 학부모', sub:'중학교 1학년 · 수학 · 경기 고양시 · 접수 05/13 16:20',
+    title:'SID-2844 · 정미경 학부모', sub:'중학교 1학년 · 수학 · 경기 고양시 · 접수 05/13 16:20',
     insightType:'danger',
     insightTitle:'매칭 실패 · 원인 분석',
     insightText:'신규 학부모 · 요청 1명 발송 후 자동취소. 가용 선생님 수 부족(해당 지역 2명). 알림 발송 후 학부모 미확인 24h 초과. 추가 알림 시도가 필요했음.',
     info:[
-      ['담당자','이민호'],['이용기록','신규'],['알림 채널','이메일'],
+      ['담당자','김성환'],['이용기록','신규'],['알림 채널','이메일'],
       ['알림→접수','2h 10분'],['접수→요청발송','22분'],['자동취소까지','—'],['확정시간','—'],['총 소요시간','자동취소']
     ],
     teachers:[
-      {init:'송',name:'송○○',stat:'미응답 → 만료',resp:'—',respColor:'var(--red)'},
+      {init:'송',name:'송재희',stat:'미응답 → 만료',resp:'—',respColor:'var(--red)'},
     ],
     timeline:[
       {dot:'#BA7517',action:'이메일 알림 발송',time:'05/13 14:10',detail:''},
+      {dot:'#BA7517',action:'부모님앱 로그인',time:'05/13 16:12',detail:'웹 · 알림→로그인 2h 02분 (느린 반응)'},
       {dot:'#BA7517',action:'학부모 신청서 접수',time:'05/13 16:20',detail:'반응 소요 2h 10분'},
-      {dot:'#185FA5',action:'선생님 1명 요청 발송',time:'05/13 16:42',detail:'송○○'},
-      {dot:'#A32D2D',action:'송○○ 미응답',time:'05/13 17:42',detail:'1시간 경과 무응답'},
+      {dot:'#185FA5',action:'선생님 1명 요청 발송',time:'05/13 16:42',detail:'송재희'},
+      {dot:'#A32D2D',action:'송재희 미응답',time:'05/13 17:42',detail:'1시간 경과 무응답'},
       {dot:'#A32D2D',action:'자동취소 처리',time:'05/14 00:00',detail:'가용 선생님 소진'},
     ],
-    memos:[{who:'이민호 · 17:45',txt:'고양시 가용 선생님 1명뿐이었음. 미응답으로 추가 발송 불가. 지역 커버리지 개선 필요.'}]
+    memos:[{who:'김성환 · 17:45',txt:'고양시 가용 선생님 1명뿐이었음. 미응답으로 추가 발송 불가. 지역 커버리지 개선 필요.'}]
   },
   {
-    key:'E', sid:'SID-2843', hist:'1회', histType:'이용',
-    date:'05/13 14:50', status:'미배정', assignee:'박수현',
-    timerMin: 400, reqCount:0, respAvg:'—', confirmed:'—',
+    key:'E', sid:'SID-2843',
+    isNew:false, appCount:2, confirmedCount:1, lessonCount:4, visitsAfter:2, applyCount:0,
+    date:'05/13 14:50', status:'미배정', assignee:'이승석',
+    timerMin: 400, reqCount:0, confirmed:'—',
+    price:'시급 27,000원', request:'동작구 근처 거주 선생님 · 실험 위주 수업',
     prob:55, result:'—', resultType:'',
-    title:'SID-2843 · 한○○ 학부모', sub:'초등 4학년 · 과학 · 서울 동작구 · 접수 05/13 14:50',
+    title:'SID-2843 · 한지선 학부모', sub:'초등 4학년 · 과학 · 서울 동작구 · 접수 05/13 14:50',
     insightType:'warn',
     insightTitle:'주의 · 확률 55%',
     insightText:'1회 이용 학부모. 아직 선생님 요청 미발송 상태. 6h 40m 내 처리 필요. 해당 지역·과목 가용 선생님 5명 확인됨.',
     info:[
-      ['담당자','박수현'],['이용기록','1회'],['알림 채널','앱 배너'],
+      ['담당자','이승석'],['이용기록','1회'],['알림 채널','앱 배너'],
       ['알림→접수','45분'],['접수→요청발송','—'],['자동취소까지','6h 40m 남음'],['확정시간','—'],['총 소요시간','진행중']
     ],
     teachers:[],
     timeline:[
       {dot:'#1D9E75',action:'앱 배너 노출',time:'05/13 14:05',detail:''},
+      {dot:'#185FA5',action:'부모님앱 로그인',time:'05/13 14:43',detail:'iOS · 앱 v3.41.8 · 노출→로그인 38분'},
       {dot:'#1D9E75',action:'학부모 신청서 접수',time:'05/13 14:50',detail:'반응 소요 45분'},
-      {dot:'#185FA5',action:'담당자 배정',time:'05/13 14:55',detail:'박수현 배정'},
+      {dot:'#185FA5',action:'담당자 배정',time:'05/13 14:55',detail:'이승석 배정'},
       {dot:'#BA7517',action:'요청 발송 대기중',time:'현재',detail:'선생님 선택 전'},
     ],
     memos:[]
@@ -523,6 +809,8 @@ const memoStore = {};
 ROWS.forEach(r => { memoStore[r.key] = [...r.memos]; });
 
 let currentKey = null;
+let currentFilter = '';
+let currentSort = 'date';
 let sortedRows = [...ROWS];
 
 function timerClass(min) {
@@ -553,68 +841,114 @@ function statusBdg(status) {
 }
 
 function renderTable() {
-  const tbody = document.getElementById('tbl-body');
-  tbody.innerHTML = sortedRows.map(r => `
-    <tr onclick="showDetail('${r.key}')" id="row-${r.key}" class="${currentKey===r.key?'active':''}">
-      <td><span class="sid">${r.sid}</span></td>
-      <td><span class="bdg bdg-${r.histType}">${r.hist}</span></td>
-      <td style="font-size:12px">${r.date}</td>
-      <td>${statusBdg(r.status)}</td>
-      <td style="font-size:12px">${r.assignee}</td>
-      <td><span class="timer ${timerClass(r.timerMin)}">${timerLabel(r.timerMin)}</span></td>
-      <td style="text-align:center;font-size:12px">${r.reqCount}명</td>
-      <td style="font-size:12px">${r.respAvg}</td>
-      <td style="font-size:12px">${r.confirmed !== '—' ? r.confirmed + ' 확정' : '—'}</td>
-      <td>
-        <div class="prob-wrap">
-          <div class="prob-bar"><div class="prob-fill" style="width:${r.prob}%;background:${probColor(r.prob)}"></div></div>
-          <span class="prob-val" style="color:${probColor(r.prob)}">${r.prob}%</span>
+  const container = document.getElementById('data-rows');
+  container.innerHTML = sortedRows.map(r => {
+    const isActive = currentKey === r.key;
+
+    const responded = r.teachers.filter(t =>
+      t.stat.includes('수락') || t.stat.includes('응답완료')
+    );
+    const slot1 = responded[0] || null;
+    const slot2 = responded[1] || null;
+    const extraCount = Math.max(0, responded.length - 2);
+
+    const renderTeacherSlot = (t) => {
+      if (!t) return `<div class="rcard rcard-teacher empty"></div>`;
+      const statColor = t.respColor==='var(--green)' ? 'rc-stat-ok'
+                      : t.respColor==='var(--red)' ? 'rc-stat-bad'
+                      : 'rc-stat-mute';
+      const viewedHTML = (t.viewed !== undefined)
+        ? `<span class="viewed-pill ${t.viewed?'on':'off'}">${t.viewed?'프로필 봤음':'안봤음'}</span>`
+        : '';
+      return `
+        <div class="rcard rcard-teacher">
+          <div class="rc-row-flex">
+            <span class="rc-title">${t.name}</span>
+            ${viewedHTML}
+          </div>
+          <div class="${statColor}" style="font-size:11px">${t.stat} · 응답 ${t.resp}</div>
+          ${t.rating ? `<div class="rc-meta">★${t.rating} · ${t.subject} ${t.subjectHours}h · 후기 ${t.reviewCount}</div>` : ''}
         </div>
-      </td>
-      <td style="font-size:12px;font-weight:500;color:${r.resultType==='ok'?'var(--green-text)':r.resultType==='fail'?'var(--red-text)':'var(--text3)'}">${r.result}</td>
-    </tr>
-  `).join('');
+      `;
+    };
+
+    const slot1HTML = renderTeacherSlot(slot1);
+    const slot2HTML = renderTeacherSlot(slot2);
+    const extraHTML = extraCount > 0
+      ? `<div class="rcard rcard-more">+${extraCount}명</div>`
+      : `<div class="rcard rcard-more zero">—</div>`;
+
+    const memoCount = (memoStore[r.key] || []).length;
+    const lastTl = r.timeline[r.timeline.length-1];
+
+    const subShort = r.sub.split('·').slice(0, 3).join('·').trim();
+    const region = r.sub.split('·')[2]?.trim() || '';
+
+    const mainRow = `
+      <div class="data-row${isActive?' active':''}" id="row-${r.key}" onclick="toggleDetail('${r.key}')">
+
+        <div class="rcard rcard-app">
+          <div class="rc-title">${r.sid}</div>
+          <div class="rc-sub">${r.sub.split('·')[0].trim()} · ${r.sub.split('·')[1]?.trim()||''}</div>
+          <div class="rc-meta">${region} · 접수 ${r.date}</div>
+        </div>
+
+        <div class="rcard rcard-history">
+          <div class="rc-row-flex">
+            <span class="bdg bdg-${r.isNew?'신규':'이용'}">${r.isNew?'신규':'재방문'}</span>
+            <span class="rc-num">작성 ${r.appCount}번째</span>
+          </div>
+          <div class="rc-meta">확정 <span class="${r.confirmedCount>0?'rc-num':'rc-num-mute'}">${r.confirmedCount}회</span> · 수업 <span class="${r.lessonCount>0?'rc-num':'rc-num-mute'}">${r.lessonCount}회</span></div>
+          <div class="rc-meta">작성 후 앱 진입 <span class="${r.visitsAfter>0?'rc-num':'rc-num-mute'}">${r.visitsAfter}회</span></div>
+        </div>
+
+        <div class="rcard rcard-rec">
+          <div class="rc-title" style="font-size:11px">${r.assignee}</div>
+          <div class="rc-meta">요청 <span class="rc-num">${r.reqCount}명</span></div>
+          <div class="rc-meta">지원 <span class="${r.applyCount>0?'rc-num':'rc-num-mute'}">${r.applyCount}명</span></div>
+        </div>
+
+        ${slot1HTML}
+        ${slot2HTML}
+        ${extraHTML}
+
+        <div class="rcard rcard-result">
+          <div>${statusBdg(r.status)}</div>
+          <div class="rc-meta">자동취소 <span class="timer ${timerClass(r.timerMin)}">${timerLabel(r.timerMin)}</span></div>
+          <div class="rc-row-flex" style="font-size:10px">
+            <div class="prob-bar" style="width:36px"><div class="prob-fill" style="width:${r.prob}%;background:${probColor(r.prob)}"></div></div>
+            <span style="color:${probColor(r.prob)};font-weight:500">${r.prob}%</span>
+            ${r.result!=='—' ? `<span style="color:${r.resultType==='ok'?'var(--green-text)':'var(--red-text)'};font-weight:500">· ${r.result}</span>` : ''}
+          </div>
+        </div>
+
+        <div class="rcard rcard-action">
+          <div class="rc-title" style="font-size:11px">${lastTl.action}</div>
+          <div class="rc-meta">${lastTl.time}${lastTl.detail?' · '+lastTl.detail.slice(0,16):''}</div>
+          <div class="rc-meta">메모 <span class="${memoCount>0?'rc-num':'rc-num-mute'}">${memoCount}건</span></div>
+        </div>
+
+      </div>
+    `;
+    const detailBlock = isActive ? `<div class="detail-block">${buildDetailHTML(r)}</div>` : '';
+    return mainRow + detailBlock;
+  }).join('');
 }
 
-function sortBy(type) {
-  if (type === 'timer') {
-    sortedRows = [...ROWS].sort((a,b) => {
-      if (a.timerMin === null && b.timerMin === null) return 0;
-      if (a.timerMin === null) return 1;
-      if (b.timerMin === null) return -1;
-      return a.timerMin - b.timerMin;
-    });
-  } else if (type === 'prob') {
-    sortedRows = [...ROWS].sort((a,b) => b.prob - a.prob);
-  } else {
-    sortedRows = [...ROWS];
-  }
-  renderTable();
-}
-
-function showDetail(key) {
-  const d = ROWS.find(r => r.key === key);
-  if (!d) return;
-  currentKey = key;
-  renderTable();
-
-  document.getElementById('dp-title').textContent = d.title;
-  document.getElementById('dp-sub').textContent = d.sub;
-  document.getElementById('dp-status-bdg').outerHTML = `<span id="dp-status-bdg">${statusBdg(d.status)}</span>`;
-
+function buildDetailHTML(d) {
   const iMap = {ok:'',warn:'warn',danger:'danger'};
-  document.getElementById('dp-insight').innerHTML = `
-    <div class="insight-box ${iMap[d.insightType]}" style="margin:12px 18px 0">
-      <div class="insight-lbl">${d.insightTitle}</div>
-      <div class="insight-txt">${d.insightText}</div>
-    </div>
-  `;
+  const memos = memoStore[d.key] || [];
 
-  document.getElementById('dp-info').innerHTML = d.info.map(([k,v]) =>
-    `<div class="info-row"><span class="info-key">${k}</span><span class="info-val">${v}</span></div>`
-  ).join('');
+  const subParts = d.sub.split('·').map(s => s.trim());
+  const grade = subParts[0] || '';
+  const subject = subParts[1] || '';
+  const region = subParts[2] || '';
 
-  document.getElementById('dp-timeline').innerHTML = d.timeline.map((t,i) => `
+  const responded = d.teachers.filter(t =>
+    t.stat.includes('수락') || t.stat.includes('응답완료')
+  );
+
+  const timelineHTML = d.timeline.map((t,i) => `
     <div class="tl-item">
       <div class="tl-dot-col">
         <div class="tl-dot" style="background:${t.dot}"></div>
@@ -628,54 +962,404 @@ function showDetail(key) {
     </div>
   `).join('');
 
-  const tEl = document.getElementById('dp-teachers');
-  if (d.teachers.length === 0) {
-    tEl.innerHTML = '<div class="no-teacher">아직 요청한 선생님이 없습니다.</div>';
-  } else {
-    tEl.innerHTML = d.teachers.map(t => `
-      <div class="teacher-row">
-        <div class="t-avatar" style="background:${t.respColor==='var(--green)'?'var(--green-bg)':t.respColor==='var(--red)'?'var(--red-bg)':'var(--gray-bg)'};color:${t.respColor==='var(--green)'?'var(--green-text)':t.respColor==='var(--red)'?'var(--red-text)':'var(--gray-text)'}">${t.init}</div>
-        <div class="t-name">${t.name}</div>
-        <div class="t-stat">${t.stat}</div>
-        <div class="t-resp" style="color:${t.respColor}">${t.resp}</div>
+  const teacherCardsHTML = responded.length === 0
+    ? '<div class="no-teacher">지원·수락한 선생님이 아직 없습니다.</div>'
+    : `<div class="teacher-cards-grid">${responded.map(t => `
+        <div class="teacher-card">
+          <div class="tc-header">
+            <div class="tc-avatar" style="background:${t.respColor==='var(--green)'?'var(--green-bg)':'var(--gray-bg)'};color:${t.respColor==='var(--green)'?'var(--green-text)':'var(--gray-text)'}">${t.init}</div>
+            <div class="tc-name-block">
+              <div class="tc-name">${t.name}</div>
+              <div class="tc-stat">${t.stat} · 응답 ${t.resp}</div>
+            </div>
+            <span class="viewed-pill ${t.viewed?'on':'off'}">${t.viewed?'프로필 봤음':'안봤음'}</span>
+          </div>
+          ${t.totalHours ? `
+            <div class="tc-stats">
+              <div class="tc-stat-item">
+                <div class="tc-stat-lbl">총 수업시간</div>
+                <div class="tc-stat-val">${t.totalHours}h</div>
+              </div>
+              <div class="tc-stat-item">
+                <div class="tc-stat-lbl">${t.subject} 수업시간</div>
+                <div class="tc-stat-val">${t.subjectHours}h</div>
+              </div>
+              <div class="tc-stat-item">
+                <div class="tc-stat-lbl">부모님 평점</div>
+                <div class="tc-stat-val"><span class="star">★</span>${t.rating}</div>
+              </div>
+              <div class="tc-stat-item">
+                <div class="tc-stat-lbl">후기</div>
+                <div class="tc-stat-val">${t.reviewCount}건</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn" onclick="event.stopPropagation();alert('${t.name} 프로필 보기 (구현 예정)')">프로필 보기</button>
+              <button class="btn btn-primary" onclick="event.stopPropagation();confirmTeacher('${d.key}','${t.name}')">이 선생님 확정 알림톡</button>
+            </div>
+          ` : ''}
+        </div>
+      `).join('')}</div>`;
+
+  const memosHTML = memos.length === 0
+    ? '<div class="memo-empty">아직 메모가 없습니다.</div>'
+    : memos.map(m => `<div class="memo-item"><div class="memo-who">${m.who}</div><div class="memo-txt">${m.txt}</div></div>`).join('');
+
+  const sidNum = d.sid.replace('SID-','');
+  const originalLink = `https://japi.jaranda.kr/applications/${sidNum}`;
+
+  return `
+    <div class="detail-inline" onclick="event.stopPropagation()">
+      <div class="dp-header">
+        <div class="dp-header-top">
+          <div>
+            <div class="dp-title">${d.title}</div>
+            <div class="dp-sub">${d.sub}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${statusBdg(d.status)}
+            <a class="link-original" href="${originalLink}" target="_blank" rel="noopener" onclick="event.stopPropagation()">원본 신청서 ↗</a>
+            <button class="btn-close" onclick="event.stopPropagation();toggleDetail('${d.key}')" aria-label="닫기">×</button>
+          </div>
+        </div>
       </div>
-    `).join('');
-  }
 
-  renderMemos(key);
-  document.getElementById('detail-panel').classList.add('open');
-  document.getElementById('list-panel').classList.add('with-detail');
-  document.getElementById('memo-input').value = '';
+      <div class="insight-box ${iMap[d.insightType]}">
+        <div class="insight-lbl">${d.insightTitle}</div>
+        <div class="insight-txt">${d.insightText}</div>
+      </div>
+
+      <div class="dp-section">
+        <div class="detail-4-cards">
+          <div class="dcard">
+            <div class="dcard-title">신청서 기본</div>
+            <div class="info-row"><span class="info-key">학년·과목</span><span class="info-val">${grade} · ${subject}</span></div>
+            <div class="info-row"><span class="info-key">지역</span><span class="info-val">${region}</span></div>
+            <div class="info-row"><span class="info-key">희망 단가</span><span class="info-val">${d.price||'—'}</span></div>
+            <div class="info-row"><span class="info-key">요청사항</span><span class="info-val">${d.request||'—'}</span></div>
+            <div class="info-row"><span class="info-key">접수일시</span><span class="info-val">${d.date}</span></div>
+          </div>
+
+          <div class="dcard">
+            <div class="dcard-title">고객 이력</div>
+            <div class="info-row"><span class="info-key">구분</span><span class="info-val">${d.isNew?'신규':'재방문'}</span></div>
+            <div class="info-row"><span class="info-key">작성 회차</span><span class="info-val">${d.appCount}번째</span></div>
+            <div class="info-row"><span class="info-key">누적 확정</span><span class="info-val">${d.confirmedCount}회</span></div>
+            <div class="info-row"><span class="info-key">누적 수업</span><span class="info-val">${d.lessonCount}회</span></div>
+            <div class="info-row"><span class="info-key">작성 후 앱 진입</span><span class="info-val">${d.visitsAfter}회</span></div>
+          </div>
+
+          <div class="dcard">
+            <div class="dcard-title">매칭 진행</div>
+            <div class="info-row"><span class="info-key">담당자</span><span class="info-val">${d.assignee}</span></div>
+            <div class="info-row"><span class="info-key">자동취소까지</span><span class="info-val">${timerLabel(d.timerMin)}</span></div>
+            <div class="info-row"><span class="info-key">요청 발송</span><span class="info-val">${d.reqCount}명</span></div>
+            <div class="info-row"><span class="info-key">지원 수락</span><span class="info-val">${d.applyCount}명</span></div>
+            <div class="info-row"><span class="info-key">매칭 확률</span><span class="info-val" style="color:${probColor(d.prob)};font-weight:600">${d.prob}%</span></div>
+            <div class="info-row"><span class="info-key">확정시간</span><span class="info-val">${d.confirmed}</span></div>
+          </div>
+
+          <div class="dcard">
+            <div class="dcard-title">액션 타임라인</div>
+            <div class="timeline">${timelineHTML}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dp-section">
+        <div class="sec-lbl">지원한 선생님 (${responded.length}명)</div>
+        ${teacherCardsHTML}
+      </div>
+
+      <div class="action-btns">
+        <button class="btn btn-primary" onclick="event.stopPropagation();confirmTeacher('${d.key}')">부모님께 확정 알림톡 발송</button>
+        <button class="btn" onclick="event.stopPropagation();alert('추가 알림 발송 (구현 예정)')">추가 알림 발송</button>
+        <button class="btn" style="margin-left:auto;color:var(--red);border-color:var(--red)" onclick="event.stopPropagation();alert('취소 처리 (구현 예정)')">취소 처리</button>
+      </div>
+
+      <div class="memo-area">
+        <div class="sec-lbl">담당자 메모</div>
+        <div class="memo-list">${memosHTML}</div>
+        <div class="memo-input-row">
+          <textarea id="memo-input-${d.key}" placeholder="이 신청서에 대한 메모를 남겨주세요..." onclick="event.stopPropagation()"></textarea>
+          <button class="btn-save" onclick="event.stopPropagation();addMemoInline('${d.key}')">저장</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
-function renderMemos(key) {
-  const el = document.getElementById('dp-memos');
-  const memos = memoStore[key] || [];
-  if (memos.length === 0) {
-    el.innerHTML = '<div class="memo-empty">아직 메모가 없습니다.</div>';
+function confirmTeacher(key, teacherName) {
+  const d = ROWS.find(r => r.key === key);
+  if (!d) return;
+  const responded = d.teachers.filter(t => t.stat.includes('수락') || t.stat.includes('응답완료'));
+  if (teacherName) {
+    alert(`[${d.sid}] 부모님께 "${teacherName} 선생님 확정 요청" 알림톡 발송 (구현 예정)`);
+  } else if (responded.length === 0) {
+    alert('지원·수락한 선생님이 없습니다.');
   } else {
-    el.innerHTML = memos.map(m =>
-      `<div class="memo-item"><div class="memo-who">${m.who}</div><div class="memo-txt">${m.txt}</div></div>`
-    ).join('');
+    const list = responded.map(t => t.name).join(', ');
+    alert(`[${d.sid}] 부모님께 지원 선생님 ${responded.length}명(${list}) 중 선택 요청 알림톡 발송 (구현 예정)`);
   }
 }
 
-function addMemo() {
-  const txt = document.getElementById('memo-input').value.trim();
-  if (!txt || !currentKey) return;
+function applyFilterSort() {
+  let rows = [...ROWS];
+  if (currentFilter) {
+    rows = rows.filter(r => r.assignee === currentFilter);
+  }
+  if (currentSort === 'timer') {
+    rows.sort((a,b) => {
+      if (a.timerMin === null && b.timerMin === null) return 0;
+      if (a.timerMin === null) return 1;
+      if (b.timerMin === null) return -1;
+      return a.timerMin - b.timerMin;
+    });
+  } else if (currentSort === 'prob') {
+    rows.sort((a,b) => b.prob - a.prob);
+  }
+  sortedRows = rows;
+  document.getElementById('list-count').textContent = `${rows.length}건`;
+  renderTable();
+}
+
+function sortBy(type) {
+  currentSort = type;
+  applyFilterSort();
+}
+
+function filterByAssignee(value) {
+  currentFilter = value;
+  applyFilterSort();
+}
+
+const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','강구슬'];
+
+// ====== GLOBAL MEMOS (인사이트 페이지) ======
+const globalMemos = [
+  {id: 'g1', who: '신진섭', ts: '05/14 09:50', tag: '지역',
+   txt: '마포구 가용 선생님 추가 모집 필요. 최근 3건 중 2건이 지역 매칭으로 시간 지연.'},
+  {id: 'g2', who: '김지윤', ts: '05/14 09:55', tag: '신규부모님',
+   txt: '신규 학부모는 알림 후 30분 이상 미접속 비율이 높음. 푸시 외 카카오 알림톡 백업 필요.'},
+  {id: 'g3', who: '노태효', ts: '05/14 11:15', tag: '재이용',
+   txt: '재이용 7회 이상 고객은 90% 이상 매칭 성공. 우선순위 큐로 분리하면 담당자 손이 덜 가도 됨.'},
+  {id: 'g4', who: '강구슬', ts: '05/13 17:30', tag: '응답속도',
+   txt: '미응답 30분 초과 시 자동 추가 발송 룰이 있으면 좋겠다. 야간 시간대 특히 필요.'},
+  {id: 'g5', who: '김성환', ts: '05/13 18:00', tag: '지역',
+   txt: '고양시 권역도 가용 인력 1명뿐. 직거래 의심 케이스 일부 발견 — 별도 추적 필요.'},
+];
+
+const INSIGHT_HISTORY = [
+  {title: '주차별 거절 사유 클러스터링', ts: '2026-05-08 17:32', memos: 22, themes: 4},
+  {title: '신규 학부모 알림 채널별 반응속도', ts: '2026-04-30 14:10', memos: 15, themes: 3},
+];
+
+const INSIGHT_MOCK = {
+  toplines: [
+    '메모 빈도 1위: 지역 가용성 (2건) — 마포구·고양시 권역 동시 발견',
+    '제안 액션 우선순위: 신규 학부모 알림 채널 다각화 (Impact 高)',
+    '관찰: 미응답 30분 초과 → 자동 추가 발송 룰 의견 반복 등장',
+  ],
+  themes: [
+    {
+      title: '지역 가용성 부족',
+      count: 2,
+      summary: '마포구·고양시 등 일부 지역에서 가용 선생님 부족으로 매칭 실패·지연 반복. 직거래 의심 케이스도 같은 권역에서 포착됨.',
+      action: '지역별 선생님 풀 현황 점검 → 부족 지역 모집 캠페인 + 직거래 모니터링 강화',
+    },
+    {
+      title: '신규 부모님 알림 반응 지연',
+      count: 1,
+      summary: '신규 학부모의 알림 → 로그인 평균 27~45분으로 길고, 이메일 채널은 2시간 이상. 푸시 단독 채널의 한계.',
+      action: '신규 가입자는 카카오 알림톡 우선 + 30분 미반응 시 자동 SMS 백업 채널 전환',
+    },
+    {
+      title: '재이용 고객 매칭 성공률 ↑',
+      count: 1,
+      summary: '재이용 7회 이상 고객은 매칭 성공률 90%+. 담당자 개입 없이도 매칭이 빠르게 종결되는 경향.',
+      action: '재이용 횟수 기반 자동 처리 룰 검토 (담당자 배정 자동화 / SLA 단축)',
+    },
+    {
+      title: '미응답 자동 추가 발송 룰 부재',
+      count: 1,
+      summary: '담당자가 수동으로 추가 발송을 모니터링 — 야간/주말에 누락 가능성. 룰 기반 자동화 의견 반복.',
+      action: '미응답 30분 초과 시 가용 선생님 1명 자동 추가 발송 (최대 2회) PoC',
+    },
+  ],
+};
+
+// ====== PAGE SWITCH ======
+function switchPage(page) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.page === page));
+  document.getElementById('page-matching').style.display = (page === 'matching') ? 'flex' : 'none';
+  document.getElementById('page-insight').classList.toggle('active', page === 'insight');
+  document.getElementById('new-app-btn').style.display = (page === 'matching') ? '' : 'none';
+  if (page === 'insight') {
+    populateInsightFilters();
+    renderMemoFeed();
+    renderInsightHistory();
+  }
+}
+
+function populateInsightFilters() {
+  const author = document.getElementById('memo-author');
+  if (author && author.options.length <= 1) {
+    author.innerHTML = ASSIGNEES.map(a => `<option value="${a}">${a}</option>`).join('');
+  }
+  const fauthor = document.getElementById('filter-author');
+  if (fauthor && fauthor.options.length <= 1) {
+    fauthor.innerHTML = '<option value="">작성자 전체</option>' +
+      ASSIGNEES.map(a => `<option value="${a}">${a}</option>`).join('');
+  }
+}
+
+function buildIntegratedFeed() {
+  const feed = globalMemos.map(m => ({...m, source: '자유', sourceLabel: '자유 메모'}));
+  Object.entries(memoStore).forEach(([key, memos]) => {
+    const row = ROWS.find(r => r.key === key);
+    const sid = row ? row.sid : '';
+    memos.forEach((m, i) => {
+      const parts = m.who.split('·').map(s => s.trim());
+      feed.push({
+        id: `${key}-${i}`,
+        who: parts[0] || '',
+        ts: parts[1] || '',
+        tag: '신청서',
+        txt: m.txt,
+        source: '신청서',
+        sourceLabel: sid,
+      });
+    });
+  });
+  feed.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  return feed;
+}
+
+function renderMemoFeed() {
+  const fAuthor = document.getElementById('filter-author').value;
+  const fTag = document.getElementById('filter-tag').value;
+  const fSource = document.getElementById('filter-source').value;
+  let feed = buildIntegratedFeed();
+  if (fAuthor) feed = feed.filter(f => f.who === fAuthor);
+  if (fTag) feed = feed.filter(f => f.tag === fTag);
+  if (fSource) feed = feed.filter(f => f.source === fSource);
+
+  document.getElementById('feed-count').textContent = `· ${feed.length}건`;
+  document.getElementById('derive-count').textContent = feed.length;
+
+  const el = document.getElementById('memo-feed-list');
+  if (feed.length === 0) {
+    el.innerHTML = '<div class="insight-empty">조건에 맞는 메모가 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = feed.map(f => `
+    <div class="feed-item tag-${f.tag}">
+      <div class="feed-meta">
+        <strong style="color:var(--text)">${f.who || '익명'}</strong>
+        <span>${f.ts || ''}</span>
+        <span class="tag-pill">${f.tag}</span>
+        <span class="source-pill">${f.sourceLabel}</span>
+      </div>
+      <div class="feed-txt">${f.txt}</div>
+    </div>
+  `).join('');
+}
+
+function addGlobalMemo() {
+  const who = document.getElementById('memo-author').value;
+  const tag = document.getElementById('memo-tag').value;
+  const ta = document.getElementById('memo-text');
+  const txt = ta.value.trim();
+  if (!txt) return;
+  const now = new Date();
+  const mm = String(now.getMonth()+1).padStart(2,'0');
+  const dd = String(now.getDate()).padStart(2,'0');
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mi = String(now.getMinutes()).padStart(2,'0');
+  globalMemos.unshift({
+    id: 'g' + Date.now(),
+    who, tag,
+    ts: `${mm}/${dd} ${hh}:${mi}`,
+    txt,
+  });
+  ta.value = '';
+  renderMemoFeed();
+}
+
+function deriveInsights() {
+  const el = document.getElementById('insight-result');
+  el.innerHTML = '<div class="insight-loading">메모 분석 중...</div>';
+  setTimeout(() => {
+    const totalMemos = document.getElementById('derive-count').textContent;
+    el.innerHTML = `
+      <div class="sec-lbl">핵심 인사이트</div>
+      <div class="toplines">
+        ${INSIGHT_MOCK.toplines.map(t => `<div class="topline">• ${t}</div>`).join('')}
+      </div>
+      <div class="sec-lbl" style="margin-top:6px">테마 클러스터</div>
+      <div class="theme-list">
+        ${INSIGHT_MOCK.themes.map(t => `
+          <div class="theme-card">
+            <div class="theme-header">
+              <div class="theme-title">${t.title}</div>
+              <span class="theme-count">${t.count}건</span>
+            </div>
+            <div class="theme-summary">${t.summary}</div>
+            <div class="theme-action"><strong>제안 액션</strong> ${t.action}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="derive-meta">도출 시각: ${new Date().toLocaleString('ko-KR')} · 분석 모델: Claude (mock) · 입력 메모 ${totalMemos}건</div>
+    `;
+    INSIGHT_HISTORY.unshift({
+      title: '메모 클러스터링 (자동)',
+      ts: new Date().toLocaleString('ko-KR'),
+      memos: parseInt(totalMemos, 10) || 0,
+      themes: INSIGHT_MOCK.themes.length,
+    });
+    renderInsightHistory();
+  }, 700);
+}
+
+function renderInsightHistory() {
+  const el = document.getElementById('history-list');
+  if (!el) return;
+  el.innerHTML = INSIGHT_HISTORY.map(h => `
+    <div class="history-item">
+      <div class="history-item-left">
+        <div class="history-item-title">${h.title}</div>
+        <div class="history-item-meta">${h.ts} · 메모 ${h.memos}건 · 테마 ${h.themes}개</div>
+      </div>
+      <button class="btn" onclick="alert('과거 인사이트 다시 보기 (구현 예정)')">보기</button>
+    </div>
+  `).join('');
+}
+
+function renderAssigneeFilter() {
+  const sel = document.getElementById('assignee-filter');
+  sel.innerHTML = '<option value="">담당자 전체</option>' +
+    ASSIGNEES.map(a => `<option value="${a}">${a}</option>`).join('');
+}
+
+function toggleDetail(key) {
+  currentKey = (currentKey === key) ? null : key;
+  renderTable();
+  if (currentKey) {
+    const row = document.getElementById('row-' + key);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function addMemoInline(key) {
+  const ta = document.getElementById('memo-input-' + key);
+  if (!ta) return;
+  const txt = ta.value.trim();
+  if (!txt) return;
   const now = new Date();
   const hm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
-  const assigneeMap = {A:'김지은',B:'박수현',C:'김지은',D:'이민호',E:'박수현'};
-  if (!memoStore[currentKey]) memoStore[currentKey] = [];
-  memoStore[currentKey].push({ who: `${assigneeMap[currentKey]} · ${hm}`, txt });
-  renderMemos(currentKey);
-  document.getElementById('memo-input').value = '';
-}
-
-function closeDetail() {
-  currentKey = null;
-  document.getElementById('detail-panel').classList.remove('open');
-  document.getElementById('list-panel').classList.remove('with-detail');
+  const assigneeMap = {A:'신진섭',B:'김지윤',C:'노태효',D:'김성환',E:'이승석'};
+  if (!memoStore[key]) memoStore[key] = [];
+  memoStore[key].push({ who: `${assigneeMap[key]} · ${hm}`, txt });
   renderTable();
 }
 
@@ -686,6 +1370,7 @@ function updateTime() {
     now.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
 }
 
+renderAssigneeFilter();
 renderTable();
 updateTime();
 setInterval(updateTime, 30000);
