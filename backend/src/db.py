@@ -65,6 +65,8 @@ class JarandaReplica:
               r.requested_teacher_name,
               r.additional_children_num,
               r.regularity,
+              r.cancelled_info,
+              r.re_recommend,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -123,6 +125,8 @@ class JarandaReplica:
               r.requested_teacher_name,
               r.additional_children_num,
               r.regularity,
+              r.cancelled_info,
+              r.re_recommend,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -200,7 +204,11 @@ class JarandaReplica:
         return result
 
     async def list_recommendation_teachers(self, sid: str) -> list[dict[str, Any]]:
-        """해당 신청서에 요청된 선생님 목록 + 응답 상태."""
+        """해당 신청서에 요청된 선생님 목록 + 응답 상태 + 부모님 열람 정보.
+
+        teacher_profile_view: viewer_id=parent_account_sid, teacher_sid=teacher.account_sid.
+        viewed_at >= r.created_at 으로 "이번 신청서 이후 열람"만 인정 (누적 이력 분리).
+        """
         query = text(
             """
             SELECT
@@ -210,9 +218,16 @@ class JarandaReplica:
               rt.rejected,
               rt.last_responded_at,
               rt._created_at AS created_at,
-              t.name AS teacher_name
+              t.name AS teacher_name,
+              tpv.viewed_at AS viewed_at,
+              tpv.viewed_count AS viewed_count
             FROM recommendation_teachers rt
             LEFT JOIN teacher t ON t.account_sid = rt.teacher_account_sid
+            LEFT JOIN recommendation r ON r.sid = rt.recommendation_sid
+            LEFT JOIN teacher_profile_view tpv
+              ON tpv.viewer_id = r.parent_account_sid
+             AND tpv.teacher_sid = rt.teacher_account_sid
+             AND tpv.viewed_at >= r.created_at
             WHERE rt.recommendation_sid = :sid
               AND rt.is_deleted = 0
             ORDER BY rt.applied DESC, rt.last_responded_at ASC
@@ -243,9 +258,16 @@ class JarandaReplica:
               rt.rejected,
               rt.last_responded_at,
               rt._created_at AS created_at,
-              t.name AS teacher_name
+              t.name AS teacher_name,
+              tpv.viewed_at AS viewed_at,
+              tpv.viewed_count AS viewed_count
             FROM recommendation_teachers rt
             LEFT JOIN teacher t ON t.account_sid = rt.teacher_account_sid
+            LEFT JOIN recommendation r ON r.sid = rt.recommendation_sid
+            LEFT JOIN teacher_profile_view tpv
+              ON tpv.viewer_id = r.parent_account_sid
+             AND tpv.teacher_sid = rt.teacher_account_sid
+             AND tpv.viewed_at >= r.created_at
             WHERE rt.recommendation_sid IN :sids
               AND rt.is_deleted = 0
             ORDER BY rt.applied DESC, rt.last_responded_at ASC

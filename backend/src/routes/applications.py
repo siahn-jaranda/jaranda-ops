@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -94,6 +95,22 @@ _REGULARITY_MAP = {1: "1회 수업", 2: "정기", 3: "다회차"}
 # biweekly: kr.jaranda.common.model.enumeration.Biweekly  (1=WEEKLY, 2=BIWEEKLY)
 
 
+def _parse_cancelled_reason(raw: Any) -> str:
+    """cancelled_info JSON에서 사람이 읽는 reason만 추출. 파싱 실패하면 원문 그대로."""
+    if not raw:
+        return ""
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            return raw.strip()
+    elif isinstance(raw, dict):
+        data = raw
+    else:
+        return ""
+    return (data.get("reason") or "").strip()
+
+
 def _request_chips(rec: dict[str, Any]) -> list[str]:
     """카드 보조 정보 칩. 첫 칩은 정기성, 그 다음 정기수업이면 매주/격주, 이후 부가 조건."""
     chips: list[str] = []
@@ -179,6 +196,7 @@ def _to_frontend_teacher(r: dict[str, Any]) -> dict[str, Any]:
     """recommendation_teachers row → 프론트 mapTeacher가 기대하는 형태.
 
     프론트(index.html)는 stat 문자열을 substring 매칭하므로 동일 라벨 유지.
+    viewed/viewed_at은 부모님이 추천 이후 선생님 프로필을 본 이력 (teacher_profile_view).
     """
     applied = bool(r.get("applied"))
     rejected = bool(r.get("rejected"))
@@ -193,12 +211,17 @@ def _to_frontend_teacher(r: dict[str, Any]) -> dict[str, Any]:
         stat = "미응답"
     name = r.get("teacher_name") or "이름 없음"
     responded_at = r.get("last_responded_at")
+    viewed_at = r.get("viewed_at")
+    viewed = _is_real_ts(viewed_at)
     return {
         "teacher_account_sid": r.get("teacher_account_sid"),
         "name": name,
         "init": name[:1] if name else "?",
         "stat": stat,
         "responded_at": responded_at.isoformat() if _is_real_ts(responded_at) else None,
+        "viewed": viewed,
+        "viewed_at": viewed_at.isoformat() if viewed else None,
+        "viewed_count": int(r.get("viewed_count") or 0) if viewed else 0,
     }
 
 
@@ -312,7 +335,10 @@ def _to_row(
         "requestedTeacherName": rec.get("requested_teacher_name") or "",
         "isUrgent": bool(rec.get("is_urgent")),
         "autoConfirm": bool(rec.get("auto_confirm")),
+        "reRecommend": bool(rec.get("re_recommend")),
         "matchedTeacher": rec.get("matched_teacher_name") or "",
+        "cancelledReason": _parse_cancelled_reason(rec.get("cancelled_info")),
+        "parentMobile": (rec.get("parent_mobile") or "").strip(),
         # 카드/테이블 뷰에서 t1/t2 추천 상태 표시 — batch 주입
         "teachers": [_to_frontend_teacher(t) for t in (teachers or [])],
     }

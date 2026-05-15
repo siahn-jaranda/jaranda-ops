@@ -367,6 +367,19 @@ input, textarea, select { font-family: inherit; }
   font-size: 11.5px; padding: 4px 9px; border-radius: 999px;
   background: #EEF1F4; color: #4B5563; font-weight: 600;
 }
+.dp-flags { display: inline-flex; gap: 4px; }
+.dp-flag {
+  font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+.dp-flag.tone-red   { background: #FDECEA; color: #A4271A; }
+.dp-flag.tone-blue  { background: #E8EEFB; color: #1B4FB8; }
+.dp-flag.tone-amber { background: #FCF1D8; color: #8A5B00; }
+.dp-request {
+  font-size: 13px; color: #1E2530; line-height: 1.55; white-space: pre-wrap;
+  background: #FAFBFC; border: 1px solid #EEF1F4; border-radius: 8px;
+  padding: 10px 12px;
+}
 .dp-foot {
   padding: 14px; border-top: 1px solid #EEF1F4; background: #FAFBFC;
   display: flex; gap: 8px;
@@ -801,10 +814,15 @@ function backendToApp(r) {
             : t.stat && t.stat.includes('백업') ? 'backup'
             : t.stat && t.stat.includes('거절') ? 'declined'
             : 'pending';
+    const viewedAtLabel = t.viewed_at ? (function(iso){
+      const d = new Date(iso); if (isNaN(d.getTime())) return '열람';
+      const pad = n => String(n).padStart(2,'0');
+      return `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    })(t.viewed_at) : null;
     return {
       name: t.name ? (t.name.endsWith('선생님') ? t.name : t.name + ' 선생님') : '—',
       stateKey: sk, note: t.resp ? '응답 ' + t.resp : (t.stat || ''),
-      viewed: !!t.viewed, viewedAt: t.viewed ? '열람' : null,
+      viewed: !!t.viewed, viewedAt: viewedAtLabel,
     };
   };
   const responded = teachers.filter(t => t.stat && (t.stat.includes('수락') || t.stat.includes('응답완료')));
@@ -825,7 +843,6 @@ function backendToApp(r) {
     probability: r.prob != null ? r.prob : 0,
     owner: r.assignee || '—',
     status: r.status || '', statusKey,
-    lastAction: '—',
     recommendation: {
       stateKey: recStateKey,
       t1: mapTeacher(responded[0]),
@@ -833,11 +850,19 @@ function backendToApp(r) {
     },
     history: {
       rebook: r.isNew === false,
-      prevTeachers: r.confirmedCount != null ? r.confirmedCount : 0,
-      notes: r.isNew === true ? '신규 가입' : (r.appCount ? `재이용 ${r.appCount}회차` : '재이용'),
+      prevMatches: r.confirmedCount != null ? r.confirmedCount : 0,
+      prevLessons: r.lessonCount != null ? r.lessonCount : 0,
     },
     extras: r.requestChips || [],
     result: r.result === '성공' ? '성공' : r.result === '실패' ? '실패' : null,
+    // 상세 패널 추가 노출 필드
+    request: r.request || '',
+    matchedTeacher: r.matchedTeacher || '',
+    cancelledReason: r.cancelledReason || '',
+    parentMobile: r.parentMobile || '',
+    isUrgent: !!r.isUrgent,
+    autoConfirm: !!r.autoConfirm,
+    reRecommend: !!r.reRecommend,
   };
 }
 
@@ -1103,6 +1128,18 @@ function teacherDetail(label, t) {
   </div>`;
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function detailBadges(app) {
+  const out = [];
+  if (app.isUrgent)    out.push(`<span class="dp-flag tone-red">긴급</span>`);
+  if (app.autoConfirm) out.push(`<span class="dp-flag tone-blue">자동확정</span>`);
+  if (app.reRecommend) out.push(`<span class="dp-flag tone-amber">재추천</span>`);
+  return out.length ? `<span class="dp-flags">${out.join('')}</span>` : '';
+}
+
 function renderDetailPanel(app) {
   if (!app) {
     return `<div class="detail-empty">
@@ -1110,11 +1147,14 @@ function renderDetailPanel(app) {
       신청서를 선택하면<br>상세 정보가 표시됩니다
     </div>`;
   }
+  const isCancelled = app.statusKey === 'cancelled';
+  const isMatched   = app.statusKey === 'matched';
   return `<aside class="detail-panel">
     <div class="dp-head">
       <div>
         <div class="id-line">
           ${statusBadge(app.statusKey)}
+          ${detailBadges(app)}
           <span class="id">${app.id}</span>
         </div>
         <div class="name">${app.child}</div>
@@ -1139,30 +1179,35 @@ function renderDetailPanel(app) {
 
       <div class="dp-section">
         <div class="section-label">우선순위 / 마감</div>
-        <div class="kv"><span class="k">마감</span><span class="v">${dlTag(app.deadline, app.deadlineState)}</span></div>
+        ${isCancelled
+          ? `<div class="kv"><span class="k">취소 사유</span><span class="v" style="color:#A4271A">${app.cancelledReason ? escapeHtml(app.cancelledReason) : '—'}</span></div>`
+          : `<div class="kv"><span class="k">마감</span><span class="v">${dlTag(app.deadline, app.deadlineState)}</span></div>`}
         <div class="kv"><span class="k">매칭 확률</span><span class="v">${probBar(app.probability, true)}</span></div>
+        ${isMatched && app.matchedTeacher ? `<div class="kv"><span class="k">매칭된 선생님</span><span class="v" style="font-weight:600">${escapeHtml(app.matchedTeacher)}</span></div>` : ''}
         <div class="kv"><span class="k">접수</span><span class="v" style="color:#4B5563;font-variant-numeric:tabular-nums">${app.receivedAt}</span></div>
         <div class="kv"><span class="k">담당자</span><span class="v">${app.owner}</span></div>
         <div class="kv"><span class="k">처리 담당</span><span class="v">${handlerInline(app)}</span></div>
       </div>
 
       <div class="dp-section">
-        <div class="section-label">고객 이력</div>
+        <div class="section-label">고객 정보</div>
         <div class="kv"><span class="k">유형</span><span class="v"><span class="id-tag ${app.parentTag==='재이용'?'tag-rebook':'tag-new'}">${app.parentTag}</span></span></div>
-        <div class="kv"><span class="k">이전 선생님</span><span class="v">${app.history.prevTeachers ?? 0}명</span></div>
-        <div class="kv"><span class="k">메모</span><span class="v" style="color:#4B5563">${app.history.notes || '—'}</span></div>
+        <div class="kv"><span class="k">이전 매칭</span><span class="v">${app.history.prevMatches ?? 0}건</span></div>
+        <div class="kv"><span class="k">이전 수업</span><span class="v">${app.history.prevLessons ?? 0}회</span></div>
+        <div class="kv"><span class="k">지역</span><span class="v">${app.region || '—'}</span></div>
+        <div class="kv"><span class="k">연락처</span><span class="v" style="font-variant-numeric:tabular-nums">${app.parentMobile || '—'}</span></div>
+      </div>
+
+      <div class="dp-section">
+        <div class="section-label">부모님 요청</div>
+        <div class="dp-request">${app.request ? escapeHtml(app.request) : '<span style="color:#9CA3AF;font-size:12px">없음</span>'}</div>
       </div>
 
       <div class="dp-section">
         <div class="section-label">추가 요청</div>
         <div class="chip-list">
-          ${(app.extras||[]).length ? app.extras.map(x => `<span class="chip">${x}</span>`).join('') : '<span style="color:#9CA3AF;font-size:12px">없음</span>'}
+          ${(app.extras||[]).length ? app.extras.map(x => `<span class="chip">${escapeHtml(x)}</span>`).join('') : '<span style="color:#9CA3AF;font-size:12px">없음</span>'}
         </div>
-      </div>
-
-      <div class="dp-section">
-        <div class="section-label">최근 액션</div>
-        <div style="font-size:12.5px;color:#4B5563;line-height:1.6">${app.lastAction || '—'}</div>
       </div>
 
     </div>
