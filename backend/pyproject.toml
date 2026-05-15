@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings>=2.3",
     "sqlalchemy>=2.0",
     "asyncmy>=0.2.10",
+    "asyncpg>=0.29",
     "structlog>=24.1",
     "google-auth>=2.30",
     "requests>=2.31",

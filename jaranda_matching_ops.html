@@ -148,7 +148,6 @@ input, textarea, select { font-family: inherit; }
   display: grid; grid-template-columns: minmax(0, 1fr) 380px;
   gap: 20px; align-items: start;
 }
-.list-grid.full { grid-template-columns: 1fr; }
 
 /* ===== CARD VIEW ===== */
 .cards { display: grid; gap: 12px; padding: 4px 0; }
@@ -313,40 +312,6 @@ input, textarea, select { font-family: inherit; }
 .compact-teacher .eye { display: inline-flex; flex-shrink: 0; }
 
 /* ===== KANBAN ===== */
-.kanban { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.kb-col {
-  background: #FAFBFC; border-radius: 12px; padding: 12px;
-  border: 1px solid #EEF1F4;
-  display: flex; flex-direction: column; gap: 10px; min-height: 240px;
-}
-.kb-col-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
-.kb-col-head .label { display: flex; align-items: center; gap: 8px; }
-.kb-col-head .label .dot { width: 8px; height: 8px; border-radius: 999px; }
-.kb-col-head .label .name { font-size: 12.5px; font-weight: 700; color: #1E2530; }
-.kb-col-head .count {
-  font-size: 11px; font-weight: 600; color: #6B7280;
-  background: #fff; padding: 2px 7px; border-radius: 999px; border: 1px solid #E5E8EC;
-}
-.kb-empty {
-  font-size: 11.5px; color: #9CA3AF; text-align: center; padding: 30px 8px;
-  border: 1px dashed #E5E8EC; border-radius: 8px;
-}
-.kb-card {
-  background: #fff; border-radius: 9px; padding: 13px;
-  border: 1px solid #E5E8EC; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
-  cursor: pointer; display: flex; flex-direction: column; gap: 8px;
-}
-.kb-card.selected { border-color: #1B4FB8; box-shadow: 0 0 0 3px rgba(27,79,184,0.12); }
-.kb-card .header-row { display: flex; align-items: center; justify-content: space-between; }
-.kb-card .name { font-size: 14px; font-weight: 700; color: #0F172A; letter-spacing: -0.01em; }
-.kb-card .name .sub { color: #6B7280; font-size: 12px; font-weight: 500; }
-.kb-card .meta { font-size: 11.5px; color: #6B7280; margin-top: 2px; }
-.kb-card .rec-box {
-  display: flex; flex-direction: column; gap: 4px;
-  background: #FAFBFC; border-radius: 6px; padding: 8px 10px; border: 1px solid #EEF1F4;
-}
-.kb-card .footer { display: flex; align-items: center; justify-content: space-between; padding-top: 2px; font-size: 10.5px; color: #6B7280; }
-
 /* ===== DETAIL PANEL ===== */
 .detail-empty {
   background: #FAFBFC; border: 1px dashed #E5E8EC; border-radius: 12px;
@@ -504,7 +469,6 @@ input, textarea, select { font-family: inherit; }
       <div class="brand-block">
         <div class="brand-mark">자</div>
         <div class="brand-name">자란다 <span class="sub">OPS</span></div>
-        <span class="beta-badge">BETA</span>
       </div>
       <nav class="tabs">
         <button class="btn-tab active" data-tab="matching" onclick="switchTab('matching')">매칭 신청서 관리</button>
@@ -521,7 +485,6 @@ input, textarea, select { font-family: inherit; }
         <input id="search-input" placeholder="신청서·고객명 검색" oninput="onSearch(this.value)">
       </div>
       <button class="btn btn-secondary" onclick="loadLiveData(true)"><span class="icon">↻</span>새로고침</button>
-      <button class="btn btn-primary" onclick="alert('신규 신청서 등록 화면 (구현 예정)')"><span class="icon">＋</span>신규 신청서</button>
       <div class="avatar" id="user-avatar">박</div>
     </div>
   </header>
@@ -552,9 +515,7 @@ input, textarea, select { font-family: inherit; }
         <div class="seg-group" id="layout-seg">
           <button class="seg-btn active" data-layout="card" onclick="setLayout('card')"><span class="icon">▭</span>카드</button>
           <button class="seg-btn" data-layout="table" onclick="setLayout('table')"><span class="icon">≡</span>테이블</button>
-          <button class="seg-btn" data-layout="kanban" onclick="setLayout('kanban')"><span class="icon">▦</span>칸반</button>
         </div>
-        <button class="btn btn-secondary" onclick="alert('내보내기 (구현 예정)')"><span class="icon">⤓</span>내보내기</button>
       </div>
     </div>
 
@@ -606,13 +567,12 @@ input, textarea, select { font-family: inherit; }
 const API_BASE = 'https://matching-ops-api-266295307740.asia-northeast3.run.app';
 const GOOGLE_CLIENT_ID = '266295307740-qq4ra3mgga9uv5e58pm5hag1pq668l6k.apps.googleusercontent.com';
 
-// ====== STATIC META (핸드오프 그대로) ======
+// ====== STATIC META ======
+// status는 운영용으로 "매칭 전 / 매칭 완료 / 취소" 3-단계만 사용.
 const STATUS_META = {
-  recommending: { label: '추천중', tone: 'blue' },
-  matched:      { label: '매칭 완료', tone: 'green' },
-  searching:    { label: '선생님 미정', tone: 'orange' },
-  review:       { label: '부모님 확인', tone: 'purple' },
-  cancelled:    { label: '취소', tone: 'red' },
+  pending:   { label: '매칭 전', tone: 'blue' },
+  matched:   { label: '매칭 완료', tone: 'green' },
+  cancelled: { label: '취소', tone: 'red' },
 };
 const REC_STATE_META = {
   accepted:  { label: '수락', tone: 'green', dot: '●' },
@@ -826,22 +786,10 @@ async function apiFetch(path) {
   return r.json();
 }
 
-// ====== DATA TRANSFORM (백엔드 → 핸드오프 APPLICATIONS 스키마) ======
+// ====== DATA TRANSFORM (백엔드 응답 → 화면 객체) ======
 function backendToApp(r) {
-  // 학년·과목·접수 — sub에서 추출
-  const subParts = (r.sub || '').split('·').map(s => s.trim());
-  const grade = subParts[0] || '';
-  const subject = subParts[1] || r.policy || '';
-  let childAge = '';
-  const m = grade.match(/(\d)/);
-  if (grade.includes('초등')) childAge = '초' + (m ? m[1] : '');
-  else if (grade.includes('중')) childAge = '중' + (m ? m[1] : '');
-  else if (grade.includes('유아')) childAge = '유아';
-
-  // 핸드오프 statusKey 매핑
-  let statusKey = r.statusKey || 'recommending';
-  if (r.result === '성공') statusKey = 'matched';
-  else if (r.result === '실패') statusKey = 'cancelled';
+  // backend STATUS_META: pending | matched | cancelled
+  const statusKey = r.statusKey || 'pending';
 
   // 추천 상태/선생님
   const teachers = r.teachers || [];
@@ -862,14 +810,15 @@ function backendToApp(r) {
   const responded = teachers.filter(t => t.stat && (t.stat.includes('수락') || t.stat.includes('응답완료')));
   const recStateKey = responded.length >= 1 ? 'accepted' : (teachers.length ? 'pending' : 'searching');
 
-  const parent = (r.title || '').split('·')[1] ? (r.title.split('·')[1].replace('학부모','').trim()) : '학부모';
+  // isNew: backend가 confirmed_count > 0 여부로 계산 (deprecated new_parent 폐기)
+  const parentTag = r.isNew === true ? '신규' : r.isNew === false ? '재이용' : '—';
 
   return {
     id: r.sid || r.key,
-    parent, parentTag: r.isNew === true ? '신규' : r.isNew === false ? '재이용' : '신규',
-    child: '—', childAge,
+    child: r.child || '자녀 미입력',
+    parentTag,
     region: r.region || '',
-    subject, schedule: (r.requestChips && r.requestChips.length) ? r.requestChips.slice(0,2).join(' · ') : '—',
+    schedule: (r.requestChips && r.requestChips.length) ? r.requestChips.slice(0,2).join(' · ') : '—',
     receivedAt: r.date || '',
     deadline: r.deadlineLabel || '—',
     deadlineState: r.deadlineState || 'ok',
@@ -1011,12 +960,11 @@ function renderCardView(apps) {
           ${viewedSummary(a.recommendation)}
         </div>
         <div class="id-name-row">
-          <span class="id-name">${a.parent}</span>
+          <span class="id-name">${a.child}</span>
           <span class="id-tag ${a.parentTag==='재이용'?'tag-rebook':'tag-new'}">${a.parentTag}</span>
-          <span class="id-child">· ${a.child}(${a.childAge||'—'})</span>
         </div>
         <div class="id-body">
-          <div>${a.subject} · ${a.schedule}</div>
+          <div>${a.schedule}</div>
           <div class="region">${a.region} · ${a.id}</div>
         </div>
       </div>
@@ -1036,6 +984,7 @@ function renderCardView(apps) {
         <div class="owner-line">
           <span class="avatar gray">${(a.owner||'?')[0]}</span>${a.owner}
         </div>
+        ${handlerRow(a)}
         <div class="action-row">
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();selectApp('${a.id}')">상세</button>
           <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();alert('액션 (구현 예정)')">액션</button>
@@ -1057,6 +1006,49 @@ function compactTeacher(label, t) {
   </div>`;
 }
 
+// 처리 담당 (matching-ops 자체 ownership). 인프라 구축 후 backend 연결 예정 — 현재는 UI placeholder.
+// 본인만 본인으로 지정/해제. 타인이 잡은 건 변경 불가.
+function handlerOf(a) { return (a && a.handler) || null; }
+function isMyHandler(a) { return !!(handlerOf(a) && authEmail && handlerOf(a) === authEmail); }
+function handlerRow(a) {
+  const h = handlerOf(a);
+  if (!h) {
+    return `<div class="handler-line none">
+      <span class="lbl">처리 담당</span>
+      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();claimHandler('${a.id}')">내가 담당</button>
+    </div>`;
+  }
+  if (isMyHandler(a)) {
+    return `<div class="handler-line mine">
+      <span class="lbl">처리 담당</span>
+      <span class="who">나</span>
+      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();releaseHandler('${a.id}')">해제</button>
+    </div>`;
+  }
+  return `<div class="handler-line other">
+    <span class="lbl">처리 담당</span>
+    <span class="who">${h}</span>
+  </div>`;
+}
+function handlerInline(a) {
+  const h = handlerOf(a);
+  if (!h) {
+    return `<span style="color:#9CA3AF">미지정</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="claimHandler('${a.id}')">내가 담당</button>`;
+  }
+  if (isMyHandler(a)) {
+    return `<span>나</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="releaseHandler('${a.id}')">해제</button>`;
+  }
+  return `<span>${h}</span>`;
+}
+function claimHandler(id) {
+  alert('처리 담당 지정은 데이터베이스 구축 후 활성화됩니다.');
+}
+function releaseHandler(id) {
+  alert('처리 담당 해제는 데이터베이스 구축 후 활성화됩니다.');
+}
+
 function renderTableView(apps) {
   return `<div class="table-card">
     <div class="table-head">
@@ -1067,8 +1059,8 @@ function renderTableView(apps) {
       <div class="table-row ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
         <div>${statusBadge(a.statusKey, 'sm')}</div>
         <div style="min-width:0">
-          <div class="tr-name">${a.parent} <span class="sub">· ${a.child}(${a.childAge||'—'})</span></div>
-          <div class="tr-meta">${a.subject} · ${a.region}</div>
+          <div class="tr-name">${a.child}</div>
+          <div class="tr-meta">${a.schedule} · ${a.region}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px">
           ${dlTag(a.deadline, a.deadlineState)}
@@ -1088,49 +1080,6 @@ function renderTableView(apps) {
       </div>
     `).join('')}
   </div>`;
-}
-
-const KANBAN_COLS = [
-  { key: 'recommending', label: '추천중', tone: 'blue' },
-  { key: 'review', label: '부모님 확인', tone: 'purple' },
-  { key: 'searching', label: '선생님 미정', tone: 'orange' },
-  { key: 'matched', label: '매칭 완료', tone: 'green' },
-];
-
-function renderKanbanView(apps) {
-  return `<div class="kanban">${KANBAN_COLS.map(col => {
-    const list = apps.filter(a => a.statusKey === col.key);
-    return `<div class="kb-col">
-      <div class="kb-col-head">
-        <div class="label">
-          <span class="dot" style="background:${TONE_FG[col.tone]}"></span>
-          <span class="name">${col.label}</span>
-        </div>
-        <span class="count">${list.length}</span>
-      </div>
-      ${list.length === 0 ? '<div class="kb-empty">건이 없습니다</div>' : ''}
-      ${list.map(a => `
-        <div class="kb-card ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
-          <div class="header-row">
-            ${dlTag(a.deadline, a.deadlineState)}
-            ${viewedSummary(a.recommendation)}
-          </div>
-          <div>
-            <div class="name">${a.parent} <span class="sub">· ${a.child}</span></div>
-            <div class="meta">${a.subject} · ${a.region}</div>
-          </div>
-          <div class="rec-box">
-            ${compactTeacher('1', a.recommendation.t1)}
-            ${compactTeacher('2', a.recommendation.t2)}
-          </div>
-          <div class="footer">
-            ${probBar(a.probability, true)}
-            <span>${a.owner}</span>
-          </div>
-        </div>
-      `).join('')}
-    </div>`;
-  }).join('')}</div>`;
 }
 
 // ====== DETAIL PANEL ======
@@ -1168,8 +1117,8 @@ function renderDetailPanel(app) {
           ${statusBadge(app.statusKey)}
           <span class="id">${app.id}</span>
         </div>
-        <div class="name">${app.parent} <span class="sub">· ${app.child}(${app.childAge||'—'})</span></div>
-        <div class="sub-line">${app.subject} · ${app.schedule}</div>
+        <div class="name">${app.child}</div>
+        <div class="sub-line">${app.schedule}</div>
       </div>
       <button class="dp-close" onclick="selectApp(null)">×</button>
     </div>
@@ -1194,6 +1143,7 @@ function renderDetailPanel(app) {
         <div class="kv"><span class="k">매칭 확률</span><span class="v">${probBar(app.probability, true)}</span></div>
         <div class="kv"><span class="k">접수</span><span class="v" style="color:#4B5563;font-variant-numeric:tabular-nums">${app.receivedAt}</span></div>
         <div class="kv"><span class="k">담당자</span><span class="v">${app.owner}</span></div>
+        <div class="kv"><span class="k">처리 담당</span><span class="v">${handlerInline(app)}</span></div>
       </div>
 
       <div class="dp-section">
@@ -1247,23 +1197,14 @@ function render() {
   const apps = getApps();
   document.getElementById('count-chip').textContent = `전체 ${apps.length}건`;
 
-  const grid = document.getElementById('list-grid');
   const listArea = document.getElementById('list-area');
   const detailArea = document.getElementById('detail-area');
 
-  if (state.layout === 'kanban') {
-    grid.classList.add('full');
-    detailArea.style.display = 'none';
-    listArea.innerHTML = renderKanbanView(apps);
-  } else {
-    grid.classList.remove('full');
-    detailArea.style.display = '';
-    if (state.layout === 'table') listArea.innerHTML = renderTableView(apps);
-    else listArea.innerHTML = renderCardView(apps);
+  if (state.layout === 'table') listArea.innerHTML = renderTableView(apps);
+  else listArea.innerHTML = renderCardView(apps);
 
-    const sel = apps.find(a => a.id === state.selectedId) || APPS.find(a => a.id === state.selectedId) || null;
-    detailArea.innerHTML = renderDetailPanel(sel);
-  }
+  const sel = apps.find(a => a.id === state.selectedId) || APPS.find(a => a.id === state.selectedId) || null;
+  detailArea.innerHTML = renderDetailPanel(sel);
 }
 
 function selectApp(id) { state.selectedId = id; render(); }

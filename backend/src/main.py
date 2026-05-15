@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src import auth
 from src.config import settings
-from src.routes import applications
+from src.routes import applications, memos
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -37,6 +37,9 @@ app.include_router(auth.router)
 
 # 데이터 routes — Google OAuth 세션 토큰 필수 (auth_required=true 일 때)
 app.include_router(applications.router, dependencies=[Depends(auth.require_auth)])
+
+# 메모 CRUD — 라우트 내부에서 require_auth_full 의존성으로 author 식별
+app.include_router(memos.router, dependencies=[Depends(auth.require_auth)])
 
 
 @app.get("/")

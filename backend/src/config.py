@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     jaranda_replica_url: str
 
+    # matching-ops 전용 PostgreSQL (메모/인사이트 영속화). 미설정 시 메모 API 비활성.
+    # 형식: postgresql+asyncpg://user:pw@/db?host=/cloudsql/PROJECT:REGION:INSTANCE
+    matching_ops_db_url: str = ""
+
     # CORS — 페이지 도메인. 운영은 Cloud Run, 로컬은 file://·localhost
     allowed_origins: str = (
         "https://matching-ops-266295307740.asia-northeast3.run.app,"

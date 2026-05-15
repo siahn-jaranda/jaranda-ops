@@ -46,6 +46,17 @@ def validate_session(token: str) -> str | None:
     return session["email"]
 
 
+def validate_session_full(token: str) -> dict | None:
+    """email + name 함께 반환. 메모 author 기록용."""
+    session = _session_store.get(token)
+    if not session:
+        return None
+    if time.time() > session["expires_at"]:
+        del _session_store[token]
+        return None
+    return {"email": session["email"], "name": session.get("name") or ""}
+
+
 @router.post("/google")
 async def google_login(body: GoogleLoginRequest):
     if not settings.google_client_id:
@@ -112,3 +123,16 @@ async def require_auth(authorization: str = Header(None)) -> str:
     if not email:
         raise HTTPException(status_code=401, detail="세션 만료")
     return email
+
+
+async def require_auth_full(authorization: str = Header(None)) -> dict:
+    """email + name 필요한 라우트(메모 작성 등)에서 사용."""
+    if not settings.auth_required:
+        return {"email": "anonymous@dev", "name": "dev"}
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="인증 토큰 필요")
+    token = authorization.removeprefix("Bearer ").strip()
+    info = validate_session_full(token)
+    if not info:
+        raise HTTPException(status_code=401, detail="세션 만료")
+    return info

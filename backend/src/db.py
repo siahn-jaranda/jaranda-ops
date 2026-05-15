@@ -63,7 +63,8 @@ class JarandaReplica:
               r.preferable_teacher_characteristics,
               r.parent_address,
               r.requested_teacher_name,
-              p.policy_name,
+              r.additional_children_num,
+              r.regularity,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -75,7 +76,6 @@ class JarandaReplica:
                 WHERE rt.recommendation_sid = r.sid AND rt.requested = 1
               ) AS requested_count
             FROM recommendation r
-            LEFT JOIN request_form_policy p ON p.request_form_id = r.sid
             WHERE r.created_at >= NOW() - INTERVAL :window_hours HOUR
               AND r.status != 101
             ORDER BY r.updated_at DESC
@@ -121,7 +121,8 @@ class JarandaReplica:
               r.preferable_teacher_characteristics,
               r.parent_address,
               r.requested_teacher_name,
-              p.policy_name,
+              r.additional_children_num,
+              r.regularity,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -133,7 +134,6 @@ class JarandaReplica:
                 WHERE rt.recommendation_sid = r.sid AND rt.requested = 1
               ) AS requested_count
             FROM recommendation r
-            LEFT JOIN request_form_policy p ON p.request_form_id = r.sid
             WHERE r.sid = :sid
             """
         )
@@ -221,6 +221,46 @@ class JarandaReplica:
         async with self._session_factory() as session:
             result = await session.execute(query, {"sid": sid})
             return [dict(row._mapping) for row in result]
+
+    async def list_recommendation_teachers_batch(
+        self, sids: list[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """여러 신청서의 선생님 목록을 한 번에 조회. {sid: [teacher,...]}.
+
+        - list 응답에 t1/t2 미리 채워주기 위함 (N+1 회피)
+        - 정렬 순서는 단건 list_recommendation_teachers와 동일
+        """
+        if not sids:
+            return {}
+
+        query = text(
+            """
+            SELECT
+              rt.recommendation_sid,
+              rt.teacher_account_sid,
+              rt.applied,
+              rt.requested,
+              rt.rejected,
+              rt.last_responded_at,
+              rt._created_at AS created_at,
+              t.name AS teacher_name
+            FROM recommendation_teachers rt
+            LEFT JOIN teacher t ON t.account_sid = rt.teacher_account_sid
+            WHERE rt.recommendation_sid IN :sids
+              AND rt.is_deleted = 0
+            ORDER BY rt.applied DESC, rt.last_responded_at ASC
+            """
+        ).bindparams(bindparam("sids", expanding=True))
+
+        result: dict[str, list[dict[str, Any]]] = {sid: [] for sid in sids}
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"sids": sids})
+            for row in rows:
+                m = dict(row._mapping)
+                rec_sid = str(m.pop("recommendation_sid"))
+                if rec_sid in result:
+                    result[rec_sid].append(m)
+        return result
 
 
 _replica: JarandaReplica | None = None

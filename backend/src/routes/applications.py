@@ -22,18 +22,19 @@ logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
 
 
-# 자란다 콘솔 status 코드 → 핸드오프 statusKey + 한국어 라벨.
-# 핸드오프 STATUS_META: recommending(추천중) / review(부모님 확인) / searching(선생님 미정)
-# / matched(매칭 완료) / cancelled
-# 메모리 reference_recommendation_status: 10/20/40/90/99/100/101 외 코드는 "기타"로 노출
+# recommendation.status (DB 코멘트 기준)
+#   1: 신규추천 / 10: 접수안내 / 20: 선생님추천 / 30: 선생님확정
+#   40: 방문가이드 / 90: 추천완료 / 99: 추천취소 / 100: 삭제됨 / 101: 임시저장
+# 운영 화면은 "매칭 전 / 매칭 완료 / 취소" 3-단계로만 노출.
 STATUS_META = {
-    10: ("recommending", "진행중"),
-    20: ("review", "부모님 확인"),
-    40: ("matched", "매칭완료"),
-    90: ("matched", "매칭완료"),
-    99: ("cancelled", "취소"),
+    1:   ("pending", "매칭 전"),
+    10:  ("pending", "매칭 전"),
+    20:  ("pending", "매칭 전"),
+    30:  ("pending", "매칭 전"),
+    40:  ("matched", "매칭 완료"),
+    90:  ("matched", "매칭 완료"),
+    99:  ("cancelled", "취소"),
     100: ("cancelled", "취소"),
-    101: ("cancelled", "취소"),
 }
 
 
@@ -81,17 +82,32 @@ def _deadline_label(timer_min: int | None) -> str:
     return f"{d}일 {rh}시간 남음" if rh else f"{d}일 남음"
 
 
+# preferable_teacher_gender: kr.jaranda.common.model.enumeration.Gender
+#   0=UNISEX(커머스용) / 1=FEMALE / 2=MALE / 3=BOTH(추천용 "성별무관")
+# 0/3은 선호 없음으로 칩 노출 안 함.
 _GENDER_MAP = {1: "여성", 2: "남성"}
+
+# regularity: kr.jaranda.common.model.enumeration.Regularity
+#   0=NONE / 1=ONE_TIME(1회) / 2=REGULAR(정기) / 3=MULTIPLE_TIMES(다회차)
+_REGULARITY_MAP = {1: "1회 수업", 2: "정기", 3: "다회차"}
+
+# biweekly: kr.jaranda.common.model.enumeration.Biweekly  (1=WEEKLY, 2=BIWEEKLY)
 
 
 def _request_chips(rec: dict[str, Any]) -> list[str]:
-    """핸드오프 '추가 요청' 칩 그룹용. parent_request + 정형 조건들을 칩으로."""
+    """카드 보조 정보 칩. 첫 칩은 정기성, 그 다음 정기수업이면 매주/격주, 이후 부가 조건."""
     chips: list[str] = []
 
-    if rec.get("biweekly") == 0:
-        chips.append("매주")
-    elif rec.get("biweekly") == 1:
-        chips.append("격주")
+    reg = rec.get("regularity")
+    if reg in _REGULARITY_MAP:
+        chips.append(_REGULARITY_MAP[reg])
+
+    # 정기/다회차일 때만 매주/격주 의미 있음
+    if reg in (2, 3):
+        if rec.get("biweekly") == 1:
+            chips.append("매주")
+        elif rec.get("biweekly") == 2:
+            chips.append("격주")
 
     term = rec.get("regular_visit_term")
     if term:
@@ -159,9 +175,37 @@ def _compute_prob(
     return {"value": max(5, min(100, score)), "source": "heuristic"}
 
 
+def _to_frontend_teacher(r: dict[str, Any]) -> dict[str, Any]:
+    """recommendation_teachers row → 프론트 mapTeacher가 기대하는 형태.
+
+    프론트(index.html)는 stat 문자열을 substring 매칭하므로 동일 라벨 유지.
+    """
+    applied = bool(r.get("applied"))
+    rejected = bool(r.get("rejected"))
+    requested = bool(r.get("requested"))
+    if applied:
+        stat = "응답완료"
+    elif rejected:
+        stat = "거절"
+    elif requested:
+        stat = "요청됨"
+    else:
+        stat = "미응답"
+    name = r.get("teacher_name") or "이름 없음"
+    responded_at = r.get("last_responded_at")
+    return {
+        "teacher_account_sid": r.get("teacher_account_sid"),
+        "name": name,
+        "init": name[:1] if name else "?",
+        "stat": stat,
+        "responded_at": responded_at.isoformat() if _is_real_ts(responded_at) else None,
+    }
+
+
 def _to_row(
     rec: dict[str, Any],
     parent_history: dict[str, int] | None = None,
+    teachers: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
@@ -212,11 +256,28 @@ def _to_row(
     # 자유 텍스트 요청
     free_request = (rec.get("parent_request_to_teacher") or "").strip()
 
+    # 자녀 표기: 메인 자녀 + 추가 자녀 수
+    child_name = (rec.get("child_name") or "").strip()
+    additional_num = int(rec.get("additional_children_num") or 0)
+    if not child_name:
+        child_display = "자녀 미입력"
+    elif additional_num >= 1:
+        child_display = f"{child_name} 외 {additional_num}명"
+    else:
+        child_display = child_name
+
+    # 신규/재이용: recommendation.new_parent는 2024-06-17 이후 항상 0(deprecated).
+    # 같은 parent_account_sid의 이전 confirmed(status 40/90) 건수로 판단.
+    is_new: bool | None
+    if parent_history is None:
+        is_new = None
+    else:
+        is_new = (parent_history.get("confirmed_count") or 0) == 0
+
     return {
         "key": str(rec["sid"]),
         "sid": f"SID-{rec['sid']}",
-        "title": f"SID-{rec['sid']} · {rec.get('parent_name') or '학부모'} 학부모",
-        "sub": f"{rec.get('child_name') or '학생'} · {rec.get('policy_name') or '정책 미연결'} · 접수 {date_str}",
+        "child": child_display,
         "date": date_str,
         # 핸드오프 매핑
         "status": status_label,
@@ -234,18 +295,17 @@ def _to_row(
             confirmed, cancelled,
             int(rec.get("applied_count") or 0),
             int(rec.get("requested_count") or 0),
-            bool(rec.get("new_parent")),
+            bool(is_new) if is_new is not None else False,
             timer,
             bool(rec.get("is_urgent")),
         ),
         "result": result,
         "resultType": result_type,
-        "isNew": bool(rec.get("new_parent")) if rec.get("new_parent") is not None else None,
+        "isNew": is_new,
         # parent 누적 이력 — get_parent_history_counts 결과 주입
         "appCount": (parent_history or {}).get("app_count"),
         "confirmedCount": (parent_history or {}).get("confirmed_count"),
         "lessonCount": (parent_history or {}).get("lesson_count"),
-        "policy": rec.get("policy_name"),
         "price": price_str,
         "request": free_request,
         "requestChips": chips,
@@ -253,6 +313,8 @@ def _to_row(
         "isUrgent": bool(rec.get("is_urgent")),
         "autoConfirm": bool(rec.get("auto_confirm")),
         "matchedTeacher": rec.get("matched_teacher_name") or "",
+        # 카드/테이블 뷰에서 t1/t2 추천 상태 표시 — batch 주입
+        "teachers": [_to_frontend_teacher(t) for t in (teachers or [])],
     }
 
 
@@ -263,6 +325,8 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
         rows = await replica.list_recent_recommendations(limit=limit)
         parent_sids = list({r["parent_account_sid"] for r in rows if r.get("parent_account_sid")})
         history_map = await replica.get_parent_history_counts(parent_sids)
+        rec_sids = [str(r["sid"]) for r in rows if r.get("sid") is not None]
+        teachers_map = await replica.list_recommendation_teachers_batch(rec_sids)
     except Exception:
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
@@ -270,7 +334,11 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
     return {
         "count": len(rows),
         "rows": [
-            _to_row(r, history_map.get(r.get("parent_account_sid")))
+            _to_row(
+                r,
+                history_map.get(r.get("parent_account_sid")),
+                teachers_map.get(str(r.get("sid"))),
+            )
             for r in rows
         ],
     }
@@ -296,7 +364,17 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("get_parent_history_counts failed sid=%s", parent_sid)
 
-    return _to_row(rec, history_map.get(parent_sid) if parent_sid else None)
+    teachers: list[dict[str, Any]] = []
+    try:
+        teachers = await replica.list_recommendation_teachers(sid)
+    except Exception:
+        logger.exception("list_recommendation_teachers failed sid=%s", sid)
+
+    return _to_row(
+        rec,
+        history_map.get(parent_sid) if parent_sid else None,
+        teachers,
+    )
 
 
 @router.get("/{sid}/teachers")
@@ -308,37 +386,11 @@ async def list_teachers(sid: str) -> dict[str, Any]:
         logger.exception("list_teachers failed sid=%s", sid)
         raise HTTPException(status_code=503, detail="replica query failed")
 
-    teachers = []
     for r in rows:
-        applied = bool(r.get("applied"))
-        rejected = bool(r.get("rejected"))
-        requested = bool(r.get("requested"))
-        if applied:
-            stat = "응답완료"
-        elif rejected:
-            stat = "거절"
-        elif requested:
-            stat = "요청됨"
-        else:
-            stat = "미응답"
-        teacher_name = r.get("teacher_name")
-        if not teacher_name:
+        if not r.get("teacher_name"):
             logger.warning(
                 "teacher name missing — replica stale? account_sid=%s recommendation_sid=%s",
                 r.get("teacher_account_sid"),
                 sid,
             )
-            name = "이름 없음"
-        else:
-            name = teacher_name
-        responded_at = r.get("last_responded_at")
-        teachers.append(
-            {
-                "teacher_account_sid": r.get("teacher_account_sid"),
-                "name": name,
-                "init": name[:1] if name else "?",
-                "stat": stat,
-                "responded_at": responded_at.isoformat() if _is_real_ts(responded_at) else None,
-            }
-        )
-    return {"sid": sid, "teachers": teachers}
+    return {"sid": sid, "teachers": [_to_frontend_teacher(r) for r in rows]}
