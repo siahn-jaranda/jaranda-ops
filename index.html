@@ -148,6 +148,7 @@ input, textarea, select { font-family: inherit; }
   display: grid; grid-template-columns: minmax(0, 1fr) 380px;
   gap: 20px; align-items: start;
 }
+.list-grid > div:last-child { align-self: stretch; }
 
 /* ===== CARD VIEW ===== */
 .cards { display: grid; gap: 12px; padding: 4px 0; }
@@ -282,14 +283,14 @@ input, textarea, select { font-family: inherit; }
   overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
 }
 .table-head {
-  display: grid; grid-template-columns: 120px 1.2fr 1fr 1.4fr 130px 110px 80px;
+  display: grid; grid-template-columns: 120px 1.2fr 1fr 1.4fr 130px 110px;
   gap: 12px; padding: 10px 14px;
   background: #FAFBFC; border-bottom: 1px solid #E5E8EC;
   font-size: 10.5px; font-weight: 700; color: #6B7280;
   letter-spacing: 0.06em; text-transform: uppercase;
 }
 .table-row {
-  display: grid; grid-template-columns: 120px 1.2fr 1fr 1.4fr 130px 110px 80px;
+  display: grid; grid-template-columns: 120px 1.2fr 1fr 1.4fr 130px 110px;
   gap: 12px; padding: 14px 14px; align-items: center;
   border-bottom: 1px solid #EEF1F4; cursor: pointer;
   transition: background 100ms ease;
@@ -1167,9 +1168,6 @@ function renderCardView(apps) {
           <span class="avatar gray">${(a.owner||'?')[0]}</span>${a.owner}
         </div>
         ${handlerRow(a)}
-        <div class="action-row">
-          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();selectApp('${a.id}')">상세</button>
-        </div>
       </div>
     </div>
   `).join('')}</div>`;
@@ -1275,7 +1273,7 @@ function renderTableView(apps) {
   return `<div class="table-card">
     <div class="table-head">
       <div>상태</div><div>신청 정보</div><div>마감 / 접수</div>
-      <div>선생님 추천</div><div>매칭 확률</div><div>담당자</div><div></div>
+      <div>선생님 추천</div><div>매칭 확률</div><div>담당자</div>
     </div>
     ${apps.map(a => `
       <div class="table-row ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
@@ -1295,9 +1293,6 @@ function renderTableView(apps) {
         <div>${probBar(a.probability, true)}</div>
         <div style="font-size:12.5px;color:#4B5563;display:flex;align-items:center;gap:6px">
           <span class="avatar gray">${(a.owner||'?')[0]}</span>${a.owner}
-        </div>
-        <div style="text-align:right">
-          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();selectApp('${a.id}')">열기 →</button>
         </div>
       </div>
     `).join('')}
