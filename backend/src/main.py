@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src import auth
 from src.config import settings
-from src.routes import applications, memos
+from src.routes import applications, handlers, managed, memos
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -40,6 +40,12 @@ app.include_router(applications.router, dependencies=[Depends(auth.require_auth)
 
 # 메모 CRUD — 라우트 내부에서 require_auth_full 의존성으로 author 식별
 app.include_router(memos.router, dependencies=[Depends(auth.require_auth)])
+
+# 처리 담당 claim/release — 라우트 내부에서 require_auth_full로 본인 식별
+app.include_router(handlers.router, dependencies=[Depends(auth.require_auth)])
+
+# 관리 신청서 목록 — 메모 영속화된 신청서 (snapshot 기반)
+app.include_router(managed.router, dependencies=[Depends(auth.require_auth)])
 
 
 @app.get("/")

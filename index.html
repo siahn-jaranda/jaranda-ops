@@ -178,6 +178,7 @@ input, textarea, select { font-family: inherit; }
 .id-child { font-size: 12.5px; color: #6B7280; }
 .id-body { font-size: 12.5px; color: #4B5563; line-height: 1.5; }
 .id-body .region { color: #6B7280; margin-top: 2px; }
+.id-body .memo-meta { color: #1B4FB8; margin-top: 4px; font-weight: 600; font-size: 12px; }
 
 .col-rec {
   background: #FAFBFC; border-radius: 10px; padding: 12px 14px;
@@ -346,12 +347,22 @@ input, textarea, select { font-family: inherit; }
   padding: 10px 12px; display: flex; align-items: center; gap: 10px;
 }
 .teacher-card .av {
-  width: 30px; height: 30px; border-radius: 999px;
+  width: 36px; height: 36px; border-radius: 999px;
   background: #E8F0FE; color: #1B4FB8;
   display: inline-flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 12px; flex-shrink: 0;
+  font-weight: 700; font-size: 13px; flex-shrink: 0; overflow: hidden;
 }
+.teacher-card .av img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .teacher-card .av.empty { background: #EEF1F4; color: #9CA3AF; }
+.teacher-card .tc-stats {
+  margin-top: 8px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+}
+.teacher-card .tc-stat {
+  background: #fff; border: 1px solid #EEF1F4; border-radius: 6px; padding: 6px 4px; text-align: center;
+}
+.teacher-card .tc-stat .lbl { font-size: 10px; color: #6B7280; letter-spacing: .02em; }
+.teacher-card .tc-stat .val { font-size: 12.5px; color: #1E2530; font-weight: 700; margin-top: 2px; line-height: 1.25; }
+.teacher-card .tc-stat .sub { font-size: 10px; color: #9CA3AF; font-weight: 500; }
 .teacher-card .body { flex: 1; min-width: 0; }
 .teacher-card .row1 { display: flex; align-items: center; gap: 6px; }
 .teacher-card .row1 .lbl { font-size: 11px; font-weight: 700; color: #6B7280; letter-spacing: 0.04em; }
@@ -454,6 +465,57 @@ input, textarea, select { font-family: inherit; }
 
 #app-shell { display: none; }
 #app-shell.ready { display: block; }
+
+/* ===== MEMO MODAL ===== */
+.memo-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(20,24,32,.45);
+  display: none; align-items: center; justify-content: center; z-index: 1000;
+}
+.memo-modal-backdrop.open { display: flex; }
+.memo-modal {
+  width: 560px; max-width: calc(100vw - 32px); max-height: 86vh;
+  background: #fff; border-radius: 14px; display: flex; flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0,0,0,.18);
+}
+.memo-modal-head {
+  padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid #EEF1F4;
+}
+.memo-modal-head .ttl { font-weight: 700; font-size: 15px; color: #1E2530; }
+.memo-modal-head .ttl .sid { color: #6B7280; font-weight: 500; margin-left: 6px; font-size: 13px; }
+.memo-modal-close {
+  border: none; background: transparent; font-size: 22px; cursor: pointer; color: #6B7280;
+}
+.memo-modal-body { padding: 16px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.memo-modal-foot {
+  padding: 12px 20px; border-top: 1px solid #EEF1F4; display: flex; justify-content: flex-end; gap: 8px;
+}
+.memo-list { display: flex; flex-direction: column; gap: 10px; }
+.memo-item {
+  border: 1px solid #EEF1F4; border-radius: 8px; padding: 10px 12px; background: #FAFBFC;
+}
+.memo-item .head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+  font-size: 12px; color: #6B7280;
+}
+.memo-item .head .who { font-weight: 600; color: #1E2530; }
+.memo-item .head .del {
+  border: none; background: transparent; color: #B43F18; cursor: pointer; font-size: 12px;
+}
+.memo-item .body { font-size: 13px; color: #1E2530; line-height: 1.55; white-space: pre-wrap; }
+.memo-item .tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+.memo-item .tags .tg { font-size: 11px; color: #1B4FB8; background: #EAF0FF; padding: 2px 8px; border-radius: 999px; }
+.memo-empty { color: #9CA3AF; font-size: 13px; padding: 18px 0; text-align: center; }
+#memo-textarea {
+  width: 100%; min-height: 88px; border: 1px solid #E5E7EB; border-radius: 8px;
+  padding: 10px; font-family: inherit; font-size: 13.5px; resize: vertical; box-sizing: border-box;
+}
+.memo-modal .tag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.memo-modal .tag-chip {
+  font-size: 11.5px; padding: 4px 10px; border-radius: 999px;
+  background: #EEF1F4; color: #4B5563; font-weight: 600; cursor: pointer; user-select: none;
+}
+.memo-modal .tag-chip.selected { background: #1B4FB8; color: #fff; }
 </style>
 </head>
 <body>
@@ -484,7 +546,8 @@ input, textarea, select { font-family: inherit; }
         <div class="brand-name">자란다 <span class="sub">OPS</span></div>
       </div>
       <nav class="tabs">
-        <button class="btn-tab active" data-tab="matching" onclick="switchTab('matching')">매칭 신청서 관리</button>
+        <button class="btn-tab active" data-tab="matching" onclick="switchTab('matching')">신청서 목록</button>
+        <button class="btn-tab" data-tab="managed" onclick="switchTab('managed')">관리 신청서 목록</button>
         <button class="btn-tab" data-tab="insight" onclick="switchTab('insight')">인사이트 도출</button>
       </nav>
     </div>
@@ -538,6 +601,27 @@ input, textarea, select { font-family: inherit; }
     </div>
   </main>
 
+  <main id="page-managed" class="main-pad" style="display:none">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="title">관리 신청서 목록</span>
+          <span class="count-chip" id="managed-count-chip">전체 0건</span>
+        </div>
+        <div class="divider-v"></div>
+        <span style="font-size:12.5px;color:#6B7280">메모가 남은 신청서 — 자란다 신청서가 사라져도 이력 보존</span>
+      </div>
+      <div class="toolbar-left" style="gap:10px">
+        <button class="btn btn-secondary" onclick="loadManagedData(true)"><span class="icon">↻</span>새로고침</button>
+      </div>
+    </div>
+
+    <div class="list-grid" id="managed-list-grid">
+      <div id="managed-list-area"></div>
+      <div id="managed-detail-area"></div>
+    </div>
+  </main>
+
   <main id="page-insight" class="main-pad" style="display:none">
     <div class="insight-card">
       <div class="insight-head">
@@ -575,6 +659,36 @@ input, textarea, select { font-family: inherit; }
 </div>
 </div>
 
+<!-- MEMO MODAL -->
+<div class="memo-modal-backdrop" id="memo-modal-backdrop" onclick="if(event.target===this)closeMemoModal()">
+  <div class="memo-modal" role="dialog" aria-modal="true">
+    <div class="memo-modal-head">
+      <div class="ttl">메모 <span class="sid" id="memo-modal-sid"></span></div>
+      <button class="memo-modal-close" onclick="closeMemoModal()" aria-label="닫기">×</button>
+    </div>
+    <div class="memo-modal-body">
+      <div class="memo-list" id="memo-list">
+        <div class="memo-empty">메모 불러오는 중…</div>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:6px">새 메모</div>
+        <textarea id="memo-textarea" placeholder="신청서 관련 메모를 작성하세요"></textarea>
+        <div class="tag-chips" id="memo-tags">
+          <span class="tag-chip" onclick="toggleMemoTag(this)">#지역</span>
+          <span class="tag-chip" onclick="toggleMemoTag(this)">#신규부모님</span>
+          <span class="tag-chip" onclick="toggleMemoTag(this)">#재이용</span>
+          <span class="tag-chip" onclick="toggleMemoTag(this)">#응답속도</span>
+          <span class="tag-chip" onclick="toggleMemoTag(this)">#기타</span>
+        </div>
+      </div>
+    </div>
+    <div class="memo-modal-foot">
+      <button class="btn btn-secondary" onclick="closeMemoModal()">닫기</button>
+      <button class="btn btn-primary" onclick="submitMemo()">저장</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ====== CONFIG ======
 const API_BASE = 'https://matching-ops-api-266295307740.asia-northeast3.run.app';
@@ -604,7 +718,7 @@ const TONE_FG = {
 // ====== MOCK DATA (핸드오프 APPLICATIONS 스키마) ======
 let APPS = [
   {
-    id: 'SID-2418', parent: '김민서', parentTag: '신규', child: '지우', childAge: '초2',
+    id: 'SID-2418', parent: '김민서', parentTag: '신규 부모님', child: '지우', childAge: '초2',
     region: '서울 마포구', subject: '수학', schedule: '주 2회 · 화/목 17:00',
     receivedAt: '5/13 09:21', deadline: '오늘 18:00', deadlineState: 'urgent',
     probability: 78, owner: '신진섭', status: '추천중', statusKey: 'recommending',
@@ -618,7 +732,7 @@ let APPS = [
     extras: ['방문 수업', '여자 선생님 선호'], result: null,
   },
   {
-    id: 'SID-2419', parent: '장하늘', parentTag: '재이용', child: '서윤', childAge: '초4',
+    id: 'SID-2419', parent: '장하늘', parentTag: '기존 부모님', child: '서윤', childAge: '초4',
     region: '서울 강서구', subject: '영어', schedule: '주 3회 · 월/수/금 16:30',
     receivedAt: '5/13 10:02', deadline: '내일 12:00', deadlineState: 'soon',
     probability: 91, owner: '김지윤', status: '매칭 완료', statusKey: 'matched',
@@ -632,7 +746,7 @@ let APPS = [
     extras: ['기존 선생님 연장'], result: '성공',
   },
   {
-    id: 'SID-2420', parent: '윤서진', parentTag: '신규', child: '도윤', childAge: '초1',
+    id: 'SID-2420', parent: '윤서진', parentTag: '신규 부모님', child: '도윤', childAge: '초1',
     region: '경기 성남시', subject: '독서·논술', schedule: '주 1회 · 토 10:00',
     receivedAt: '5/12 18:44', deadline: '오늘 22:00', deadlineState: 'urgent',
     probability: 42, owner: '노태효', status: '선생님 미정', statusKey: 'searching',
@@ -646,7 +760,7 @@ let APPS = [
     extras: ['주말 한정'], result: null,
   },
   {
-    id: 'SID-2421', parent: '송예린', parentTag: '재이용', child: '하준', childAge: '초3',
+    id: 'SID-2421', parent: '송예린', parentTag: '기존 부모님', child: '하준', childAge: '초3',
     region: '서울 송파구', subject: '과학실험', schedule: '격주 · 일 14:00',
     receivedAt: '5/12 11:10', deadline: '5/15 09:00', deadlineState: 'ok',
     probability: 65, owner: '김성환', status: '추천중', statusKey: 'recommending',
@@ -660,7 +774,7 @@ let APPS = [
     extras: ['남자 선생님 선호'], result: null,
   },
   {
-    id: 'SID-2422', parent: '노가람', parentTag: '신규', child: '라온', childAge: '유아7세',
+    id: 'SID-2422', parent: '노가람', parentTag: '신규 부모님', child: '라온', childAge: '유아7세',
     region: '인천 연수구', subject: '한글·놀이', schedule: '주 2회 · 월/수 10:30',
     receivedAt: '5/11 15:33', deadline: '5/16 18:00', deadlineState: 'ok',
     probability: 58, owner: '이승석', status: '부모님 확인', statusKey: 'review',
@@ -823,13 +937,19 @@ function backendToApp(r) {
       name: t.name ? (t.name.endsWith('선생님') ? t.name : t.name + ' 선생님') : '—',
       stateKey: sk, note: t.resp ? '응답 ' + t.resp : (t.stat || ''),
       viewed: !!t.viewed, viewedAt: viewedAtLabel,
+      profileUrl: t.profile_url || '',
+      totalHours: Number(t.total_hours || 0),
+      playHours: Number(t.play_hours || 0),
+      studyHours: Number(t.study_hours || 0),
+      reviewCount: Number(t.review_count || 0),
+      recommendRate: t.recommend_rate,
     };
   };
   const responded = teachers.filter(t => t.stat && (t.stat.includes('수락') || t.stat.includes('응답완료')));
   const recStateKey = responded.length >= 1 ? 'accepted' : (teachers.length ? 'pending' : 'searching');
 
   // isNew: backend가 confirmed_count > 0 여부로 계산 (deprecated new_parent 폐기)
-  const parentTag = r.isNew === true ? '신규' : r.isNew === false ? '재이용' : '—';
+  const parentTag = r.isNew === true ? '신규 부모님' : r.isNew === false ? '기존 부모님' : '—';
 
   return {
     id: r.sid || r.key,
@@ -863,6 +983,8 @@ function backendToApp(r) {
     isUrgent: !!r.isUrgent,
     autoConfirm: !!r.autoConfirm,
     reRecommend: !!r.reRecommend,
+    // 처리 담당 — backend matching_ops_handler 테이블에서 batch 주입 (없으면 null)
+    handler: r.handler || null,
   };
 }
 
@@ -897,6 +1019,83 @@ async function loadLiveData(force) {
     console.warn('Live data fetch failed, mock fallback:', e.message);
     setDataSource('mock');
   }
+}
+
+// ====== MANAGED LIST (메모 영속화된 신청서) ======
+let MANAGED = [];
+let managedLoadedAt = 0;
+
+function fmtRelativeTime(iso) {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return '—';
+  const diff = (Date.now() - t) / 1000;
+  if (diff < 60) return '방금 전';
+  if (diff < 3600) return `${Math.floor(diff/60)}분 전`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}시간 전`;
+  const d = new Date(iso);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+// snapshot 응답 row → 카드/상세 렌더링에 쓰이는 app 형태로 변환
+function snapshotToApp(s) {
+  return {
+    id: s.sid,
+    child: s.child || '자녀 미입력',
+    parentTag: '—',
+    region: s.region || '',
+    schedule: (s.requestChips && s.requestChips.length) ? s.requestChips.slice(0,2).join(' · ') : '—',
+    receivedAt: s.appCreatedAt ? new Date(s.appCreatedAt).toLocaleString('ko-KR', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—',
+    deadline: '—', deadlineState: 'ok',
+    probability: 0,
+    owner: '—',
+    status: s.status || '', statusKey: s.statusKey || 'pending',
+    recommendation: { stateKey: 'searching', t1: {name:'—',stateKey:'searching',viewed:false}, t2: {name:'—',stateKey:'searching',viewed:false} },
+    history: { rebook: false, prevMatches: 0, prevLessons: 0 },
+    extras: s.requestChips || [],
+    result: null,
+    request: s.parentRequest || '',
+    matchedTeacher: s.matchedTeacher || '',
+    cancelledReason: s.cancelledReason || '',
+    parentMobile: '',
+    isUrgent: !!s.isUrgent, autoConfirm: !!s.autoConfirm, reRecommend: !!s.reRecommend,
+    handler: s.handler || null,
+    memoCount: s.memoCount || 0,
+    lastMemoAt: s.lastMemoAt || null,
+  };
+}
+
+async function loadManagedData(force) {
+  if (!authToken) { showGate(); return; }
+  if (!force && Date.now() - managedLoadedAt < 10000) { renderManaged(); return; }
+  try {
+    const r = await fetch(API_BASE + '/api/managed-applications?limit=200', {
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    if (r.status === 401) { showGate('세션이 만료되었습니다. 다시 로그인해주세요.'); return; }
+    if (!r.ok) throw new Error('managed-api ' + r.status);
+    const data = await r.json();
+    MANAGED = (data.rows || []).map(snapshotToApp);
+    managedLoadedAt = Date.now();
+    renderManaged();
+  } catch (e) {
+    console.warn('Managed fetch failed:', e.message);
+    document.getElementById('managed-list-area').innerHTML =
+      `<div class="empty-feed">관리 신청서 목록을 불러오지 못했습니다 (${escapeHtml(e.message)}).</div>`;
+  }
+}
+
+function renderManaged() {
+  document.getElementById('managed-count-chip').textContent = `전체 ${MANAGED.length}건`;
+  const listArea = document.getElementById('managed-list-area');
+  if (MANAGED.length === 0) {
+    listArea.innerHTML = `<div class="empty-feed">메모가 작성된 신청서가 아직 없습니다.</div>`;
+    document.getElementById('managed-detail-area').innerHTML = '';
+    return;
+  }
+  listArea.innerHTML = renderCardView(MANAGED);
+  // 상세 패널: 관리 페이지에선 우측 컬럼 비워두기 (메모 모달이 주된 액션)
+  document.getElementById('managed-detail-area').innerHTML = '';
 }
 
 // ====== ATOMIC COMPONENTS ======
@@ -986,11 +1185,12 @@ function renderCardView(apps) {
         </div>
         <div class="id-name-row">
           <span class="id-name">${a.child}</span>
-          <span class="id-tag ${a.parentTag==='재이용'?'tag-rebook':'tag-new'}">${a.parentTag}</span>
+          <span class="id-tag ${a.parentTag==='기존 부모님'?'tag-rebook':'tag-new'}">${a.parentTag}</span>
         </div>
         <div class="id-body">
           <div>${a.schedule}</div>
           <div class="region">${a.region} · ${a.id}</div>
+          ${a.memoCount ? `<div class="memo-meta">💬 메모 ${a.memoCount}건 · 최근 ${fmtRelativeTime(a.lastMemoAt)}</div>` : ''}
         </div>
       </div>
       <div class="col-rec">
@@ -1012,7 +1212,6 @@ function renderCardView(apps) {
         ${handlerRow(a)}
         <div class="action-row">
           <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();selectApp('${a.id}')">상세</button>
-          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();alert('액션 (구현 예정)')">액션</button>
         </div>
       </div>
     </div>
@@ -1031,10 +1230,16 @@ function compactTeacher(label, t) {
   </div>`;
 }
 
-// 처리 담당 (matching-ops 자체 ownership). 인프라 구축 후 backend 연결 예정 — 현재는 UI placeholder.
-// 본인만 본인으로 지정/해제. 타인이 잡은 건 변경 불가.
+// 처리 담당 (matching-ops 자체 ownership). 신청서 admin과는 별개.
+// 본인만 본인으로 지정/해제. 타인이 잡은 건 변경 불가 (서버에서도 강제).
 function handlerOf(a) { return (a && a.handler) || null; }
-function isMyHandler(a) { return !!(handlerOf(a) && authEmail && handlerOf(a) === authEmail); }
+function isMyHandler(a) {
+  const h = handlerOf(a);
+  return !!(h && authEmail && h.email === authEmail);
+}
+function handlerDisplayName(h) {
+  return (h && (h.name || h.email)) || '';
+}
 function handlerRow(a) {
   const h = handlerOf(a);
   if (!h) {
@@ -1052,7 +1257,7 @@ function handlerRow(a) {
   }
   return `<div class="handler-line other">
     <span class="lbl">처리 담당</span>
-    <span class="who">${h}</span>
+    <span class="who">${escapeHtml(handlerDisplayName(h))}</span>
   </div>`;
 }
 function handlerInline(a) {
@@ -1065,13 +1270,45 @@ function handlerInline(a) {
     return `<span>나</span>
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="releaseHandler('${a.id}')">해제</button>`;
   }
-  return `<span>${h}</span>`;
+  return `<span>${escapeHtml(handlerDisplayName(h))}</span>`;
 }
-function claimHandler(id) {
-  alert('처리 담당 지정은 데이터베이스 구축 후 활성화됩니다.');
+async function claimHandler(id) {
+  if (!authToken) { showGate(); return; }
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${id}/handler/claim`, {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    if (r.status === 409) {
+      const data = await r.json().catch(() => ({}));
+      const h = data.detail && data.detail.handler;
+      alert(`이미 ${handlerDisplayName(h) || '다른 사람'}님이 담당 중입니다.`);
+      await loadLiveData(true);
+      return;
+    }
+    if (!r.ok) throw new Error('claim ' + r.status);
+    await loadLiveData(true);
+  } catch (e) {
+    alert('처리 담당 지정 실패: ' + e.message);
+  }
 }
-function releaseHandler(id) {
-  alert('처리 담당 해제는 데이터베이스 구축 후 활성화됩니다.');
+async function releaseHandler(id) {
+  if (!authToken) { showGate(); return; }
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${id}/handler/release`, {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    if (r.status === 403) {
+      alert('본인이 잡은 신청서만 해제할 수 있습니다.');
+      await loadLiveData(true);
+      return;
+    }
+    if (!r.ok) throw new Error('release ' + r.status);
+    await loadLiveData(true);
+  } catch (e) {
+    alert('처리 담당 해제 실패: ' + e.message);
+  }
 }
 
 function renderTableView(apps) {
@@ -1108,11 +1345,26 @@ function renderTableView(apps) {
 }
 
 // ====== DETAIL PANEL ======
+function _fmtHours(h) {
+  const n = Number(h || 0);
+  if (n === 0) return '0h';
+  if (n >= 100) return Math.round(n) + 'h';
+  return (Math.round(n * 10) / 10) + 'h';
+}
+
 function teacherDetail(label, t) {
   const meta = REC_STATE_META[t.stateKey] || REC_STATE_META.pending;
   const hasName = t.name && t.name !== '—';
+  const avInner = t.profileUrl
+    ? `<img src="${t.profileUrl}" alt="${(t.name||'').replace(/"/g,'&quot;')}" onerror="this.remove()">`
+    : (hasName ? t.name[0] : '?');
+  const totalH = Number(t.totalHours || 0);
+  const showStats = hasName && (totalH > 0 || Number(t.reviewCount||0) > 0);
+  const recRate = (t.recommendRate === null || t.recommendRate === undefined)
+    ? '—'
+    : `${Math.round(Number(t.recommendRate))}%`;
   return `<div class="teacher-card">
-    <span class="av ${hasName?'':'empty'}">${hasName ? t.name[0] : '?'}</span>
+    <span class="av ${hasName?'':'empty'}">${avInner}</span>
     <div class="body">
       <div class="row1">
         <span class="lbl">${label}</span>
@@ -1123,6 +1375,25 @@ function teacherDetail(label, t) {
         <span>${t.note||''}</span>
         ${hasName && t.viewed && t.viewedAt ? `<span class="dim">·</span><span style="color:#6B7280">${t.viewedAt} 열람</span>` : ''}
       </div>
+      ${showStats ? `<div class="tc-stats">
+        <div class="tc-stat">
+          <div class="lbl">총 수업시간</div>
+          <div class="val">${_fmtHours(totalH)}</div>
+        </div>
+        <div class="tc-stat">
+          <div class="lbl">놀이 · 배움</div>
+          <div class="val">${_fmtHours(t.playHours)}</div>
+          <div class="sub">· ${_fmtHours(t.studyHours)}</div>
+        </div>
+        <div class="tc-stat">
+          <div class="lbl">추천률</div>
+          <div class="val">${recRate}</div>
+        </div>
+        <div class="tc-stat">
+          <div class="lbl">리뷰</div>
+          <div class="val">${Number(t.reviewCount||0)}건</div>
+        </div>
+      </div>` : ''}
     </div>
     <div class="state-tag tone-${meta.tone}">${meta.label}</div>
   </div>`;
@@ -1191,7 +1462,7 @@ function renderDetailPanel(app) {
 
       <div class="dp-section">
         <div class="section-label">고객 정보</div>
-        <div class="kv"><span class="k">유형</span><span class="v"><span class="id-tag ${app.parentTag==='재이용'?'tag-rebook':'tag-new'}">${app.parentTag}</span></span></div>
+        <div class="kv"><span class="k">유형</span><span class="v"><span class="id-tag ${app.parentTag==='기존 부모님'?'tag-rebook':'tag-new'}">${app.parentTag}</span></span></div>
         <div class="kv"><span class="k">이전 매칭</span><span class="v">${app.history.prevMatches ?? 0}건</span></div>
         <div class="kv"><span class="k">이전 수업</span><span class="v">${app.history.prevLessons ?? 0}회</span></div>
         <div class="kv"><span class="k">지역</span><span class="v">${app.region || '—'}</span></div>
@@ -1212,7 +1483,7 @@ function renderDetailPanel(app) {
 
     </div>
     <div class="dp-foot">
-      <button class="btn btn-secondary" onclick="alert('메모 (구현 예정)')">메모</button>
+      <button class="btn btn-secondary" onclick="openMemoModal('${app.id}')">메모</button>
       <div class="spacer"></div>
       <button class="btn btn-primary" onclick="alert('부모님께 전달 (구현 예정)')">부모님께 전달</button>
     </div>
@@ -1252,7 +1523,15 @@ function render() {
   detailArea.innerHTML = renderDetailPanel(sel);
 }
 
-function selectApp(id) { state.selectedId = id; render(); }
+function selectApp(id) {
+  // 관리 신청서 목록에선 카드 클릭 = 메모 모달 (상세 패널이 그 페이지엔 없음)
+  if (state.tab === 'managed') {
+    if (id) openMemoModal(id);
+    return;
+  }
+  state.selectedId = id;
+  render();
+}
 function setSort(key) {
   state.sort = key;
   document.querySelectorAll('#sort-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === key));
@@ -1269,7 +1548,9 @@ function switchTab(t) {
   state.tab = t;
   document.querySelectorAll('.tabs .btn-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.getElementById('page-matching').style.display = t === 'matching' ? '' : 'none';
+  document.getElementById('page-managed').style.display = t === 'managed' ? '' : 'none';
   document.getElementById('page-insight').style.display = t === 'insight' ? '' : 'none';
+  if (t === 'managed') loadManagedData();
 }
 
 // ====== OWNER DROPDOWN ======
@@ -1300,15 +1581,113 @@ function toggleTag(el) {
   if (selectedTags.has(t)) { selectedTags.delete(t); el.classList.remove('selected'); }
   else { selectedTags.add(t); el.classList.add('selected'); }
 }
+// 인사이트 페이지 옛 mock 메모. 실 메모는 신청서 상세 → 메모 모달.
 let memoCount = 0;
 function saveMemo() {
-  const txt = document.getElementById('insight-memo').value.trim();
-  if (!txt) return;
-  memoCount++;
-  document.getElementById('memo-count').textContent = memoCount;
-  document.getElementById('insight-memo').value = '';
-  selectedTags.clear();
-  document.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
+  alert('메모는 신청서 상세 패널의 "메모" 버튼에서 작성하세요.');
+}
+
+// ====== MEMO MODAL ======
+let memoModalSid = null;
+let memoModalTags = new Set();
+
+function toggleMemoTag(el) {
+  const t = el.textContent;
+  if (memoModalTags.has(t)) { memoModalTags.delete(t); el.classList.remove('selected'); }
+  else { memoModalTags.add(t); el.classList.add('selected'); }
+}
+
+function openMemoModal(sid) {
+  memoModalSid = sid;
+  memoModalTags.clear();
+  document.getElementById('memo-modal-sid').textContent = sid;
+  document.getElementById('memo-textarea').value = '';
+  document.querySelectorAll('#memo-tags .tag-chip').forEach(c => c.classList.remove('selected'));
+  document.getElementById('memo-modal-backdrop').classList.add('open');
+  loadMemos(sid);
+}
+
+function closeMemoModal() {
+  document.getElementById('memo-modal-backdrop').classList.remove('open');
+  memoModalSid = null;
+}
+
+async function loadMemos(sid) {
+  const list = document.getElementById('memo-list');
+  list.innerHTML = `<div class="memo-empty">불러오는 중…</div>`;
+  if (!authToken) { showGate(); return; }
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${sid}/memos`, {
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    if (!r.ok) throw new Error('list ' + r.status);
+    const data = await r.json();
+    renderMemoList(data.memos || []);
+  } catch (e) {
+    list.innerHTML = `<div class="memo-empty">메모를 불러오지 못했습니다 (${escapeHtml(e.message)}).</div>`;
+  }
+}
+
+function renderMemoList(memos) {
+  const list = document.getElementById('memo-list');
+  if (!memos.length) {
+    list.innerHTML = `<div class="memo-empty">아직 작성된 메모가 없습니다.</div>`;
+    return;
+  }
+  list.innerHTML = memos.map(m => {
+    const mine = m.author_email === authEmail;
+    const who = m.author_name || m.author_email || '익명';
+    const when = fmtRelativeTime(m.created_at);
+    const tags = (m.tags || []).map(t => `<span class="tg">${escapeHtml(t)}</span>`).join('');
+    return `<div class="memo-item">
+      <div class="head">
+        <span><span class="who">${escapeHtml(who)}</span> · ${when}</span>
+        ${mine ? `<button class="del" onclick="deleteMemo(${m.id})">삭제</button>` : ''}
+      </div>
+      <div class="body">${escapeHtml(m.content)}</div>
+      ${tags ? `<div class="tags">${tags}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function submitMemo() {
+  if (!memoModalSid) return;
+  const ta = document.getElementById('memo-textarea');
+  const content = ta.value.trim();
+  if (!content) { ta.focus(); return; }
+  if (!authToken) { showGate(); return; }
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${memoModalSid}/memos`, {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify({ content, tags: Array.from(memoModalTags) }),
+    });
+    if (!r.ok) throw new Error('create ' + r.status);
+    ta.value = '';
+    memoModalTags.clear();
+    document.querySelectorAll('#memo-tags .tag-chip').forEach(c => c.classList.remove('selected'));
+    await loadMemos(memoModalSid);
+    // 메모 작성으로 관리 목록 변동 → 다음 진입 시 새로고침
+    managedLoadedAt = 0;
+  } catch (e) {
+    alert('메모 저장 실패: ' + e.message);
+  }
+}
+
+async function deleteMemo(memoId) {
+  if (!memoModalSid) return;
+  if (!confirm('메모를 삭제할까요?')) return;
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${memoModalSid}/memos/${memoId}`, {
+      method: 'DELETE',
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    if (!r.ok) throw new Error('delete ' + r.status);
+    await loadMemos(memoModalSid);
+    managedLoadedAt = 0;
+  } catch (e) {
+    alert('메모 삭제 실패: ' + e.message);
+  }
 }
 function deriveInsights() {
   const el = document.getElementById('insight-result');

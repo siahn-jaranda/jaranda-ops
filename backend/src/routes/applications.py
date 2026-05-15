@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.config import settings
 from src.db import get_replica
+from src.handler_store import get_handler_store, handler_store_available
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 logger = logging.getLogger(__name__)
@@ -111,6 +112,46 @@ def _parse_cancelled_reason(raw: Any) -> str:
     return (data.get("reason") or "").strip()
 
 
+def _region_from_address(addr_raw: Any) -> str:
+    """parent_address 첫 두 토큰 + '특별시/광역시/자치도' 접미사 제거."""
+    addr = (addr_raw or "").strip()
+    if not addr:
+        return ""
+    parts = addr.split()
+    if len(parts) >= 2:
+        first = parts[0].replace("특별시", "").replace("광역시", "").replace("자치도", "").strip()
+        return f"{first} {parts[1]}"
+    return parts[0]
+
+
+def to_snapshot_fields(rec: dict[str, Any]) -> dict[str, Any]:
+    """raw recommendation row → matching_ops_application_snapshot 컬럼 매핑.
+
+    memos.py가 메모 작성/삭제 시 자란다 replica에서 신청서를 fetch한 후 호출.
+    """
+    status_code = rec.get("status")
+    status_key, status_label = STATUS_META.get(status_code, ("etc", f"상태{status_code}"))
+    confirmed = rec.get("confirmed_at")
+    cancelled = rec.get("cancelled_at")
+    return {
+        "child_name": (rec.get("child_name") or "").strip() or None,
+        "region": _region_from_address(rec.get("parent_address")) or None,
+        "status_key": status_key,
+        "status_label": status_label,
+        "request_chips": _request_chips(rec),
+        "parent_request": (rec.get("parent_request_to_teacher") or "").strip() or None,
+        "matched_teacher": (rec.get("matched_teacher_name") or "").strip() or None,
+        "cancelled_reason": _parse_cancelled_reason(rec.get("cancelled_info")) or None,
+        "is_urgent": bool(rec.get("is_urgent")),
+        "auto_confirm": bool(rec.get("auto_confirm")),
+        "re_recommend": bool(rec.get("re_recommend")),
+        "app_created_at": rec.get("created_at"),
+        "app_deadline_at": rec.get("deadline_at"),
+        "app_confirmed_at": confirmed if _is_real_ts(confirmed) else None,
+        "app_cancelled_at": cancelled if _is_real_ts(cancelled) else None,
+    }
+
+
 def _request_chips(rec: dict[str, Any]) -> list[str]:
     """카드 보조 정보 칩. 첫 칩은 정기성, 그 다음 정기수업이면 매주/격주, 이후 부가 조건."""
     chips: list[str] = []
@@ -192,11 +233,15 @@ def _compute_prob(
     return {"value": max(5, min(100, score)), "source": "heuristic"}
 
 
-def _to_frontend_teacher(r: dict[str, Any]) -> dict[str, Any]:
+def _to_frontend_teacher(
+    r: dict[str, Any],
+    feedback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """recommendation_teachers row → 프론트 mapTeacher가 기대하는 형태.
 
     프론트(index.html)는 stat 문자열을 substring 매칭하므로 동일 라벨 유지.
-    viewed/viewed_at은 부모님이 추천 이후 선생님 프로필을 본 이력 (teacher_profile_view).
+    viewed/viewed_at: 부모님이 추천 이후 선생님 프로필을 본 이력 (teacher_profile_view).
+    hours/profile: teacher 테이블 활동 정보. feedback: parent_feedback 집계.
     """
     applied = bool(r.get("applied"))
     rejected = bool(r.get("rejected"))
@@ -213,6 +258,7 @@ def _to_frontend_teacher(r: dict[str, Any]) -> dict[str, Any]:
     responded_at = r.get("last_responded_at")
     viewed_at = r.get("viewed_at")
     viewed = _is_real_ts(viewed_at)
+    fb = feedback or {}
     return {
         "teacher_account_sid": r.get("teacher_account_sid"),
         "name": name,
@@ -222,6 +268,13 @@ def _to_frontend_teacher(r: dict[str, Any]) -> dict[str, Any]:
         "viewed": viewed,
         "viewed_at": viewed_at.isoformat() if viewed else None,
         "viewed_count": int(r.get("viewed_count") or 0) if viewed else 0,
+        "total_hours": float(r.get("experience_hour") or 0),
+        "play_hours": float(r.get("experience_hour_for_play") or 0),
+        "study_hours": float(r.get("experience_hour_for_study") or 0),
+        "profile_url": r.get("thumbnail_profile_url") or "",
+        "review_count": int(fb.get("review_count") or 0),
+        "recommend_count": int(fb.get("recommend_count") or 0),
+        "recommend_rate": fb.get("recommend_rate"),  # None | float (0~100)
     }
 
 
@@ -229,6 +282,8 @@ def _to_row(
     rec: dict[str, Any],
     parent_history: dict[str, int] | None = None,
     teachers: list[dict[str, Any]] | None = None,
+    handler: dict[str, Any] | None = None,
+    feedback_map: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
@@ -340,7 +395,12 @@ def _to_row(
         "cancelledReason": _parse_cancelled_reason(rec.get("cancelled_info")),
         "parentMobile": (rec.get("parent_mobile") or "").strip(),
         # 카드/테이블 뷰에서 t1/t2 추천 상태 표시 — batch 주입
-        "teachers": [_to_frontend_teacher(t) for t in (teachers or [])],
+        "teachers": [
+            _to_frontend_teacher(t, (feedback_map or {}).get(t.get("teacher_account_sid")))
+            for t in (teachers or [])
+        ],
+        # 처리 담당 — matching_ops_handler 테이블에서 batch 주입
+        "handler": handler,
     }
 
 
@@ -353,9 +413,23 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
         history_map = await replica.get_parent_history_counts(parent_sids)
         rec_sids = [str(r["sid"]) for r in rows if r.get("sid") is not None]
         teachers_map = await replica.list_recommendation_teachers_batch(rec_sids)
+        teacher_sids = list({
+            t.get("teacher_account_sid")
+            for ts in teachers_map.values()
+            for t in ts
+            if t.get("teacher_account_sid")
+        })
+        feedback_map = await replica.get_teacher_feedback_summary(teacher_sids)
     except Exception:
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
+
+    handler_map: dict[str, dict[str, Any]] = {}
+    if handler_store_available():
+        try:
+            handler_map = await get_handler_store().list_by_sids(rec_sids)
+        except Exception:
+            logger.exception("handler batch fetch failed (graceful)")
 
     return {
         "count": len(rows),
@@ -364,6 +438,8 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
                 r,
                 history_map.get(r.get("parent_account_sid")),
                 teachers_map.get(str(r.get("sid"))),
+                handler_map.get(str(r.get("sid"))),
+                feedback_map,
             )
             for r in rows
         ],
@@ -396,10 +472,28 @@ async def get_application(sid: str) -> dict[str, Any]:
     except Exception:
         logger.exception("list_recommendation_teachers failed sid=%s", sid)
 
+    feedback_map: dict[str, dict[str, Any]] = {}
+    if teachers:
+        try:
+            feedback_map = await replica.get_teacher_feedback_summary(
+                [t["teacher_account_sid"] for t in teachers if t.get("teacher_account_sid")]
+            )
+        except Exception:
+            logger.exception("feedback summary failed sid=%s", sid)
+
+    handler: dict[str, Any] | None = None
+    if handler_store_available():
+        try:
+            handler = await get_handler_store().get(sid)
+        except Exception:
+            logger.exception("handler fetch failed sid=%s (graceful)", sid)
+
     return _to_row(
         rec,
         history_map.get(parent_sid) if parent_sid else None,
         teachers,
+        handler,
+        feedback_map,
     )
 
 
@@ -419,4 +513,20 @@ async def list_teachers(sid: str) -> dict[str, Any]:
                 r.get("teacher_account_sid"),
                 sid,
             )
-    return {"sid": sid, "teachers": [_to_frontend_teacher(r) for r in rows]}
+
+    feedback_map: dict[str, dict[str, Any]] = {}
+    if rows:
+        try:
+            feedback_map = await replica.get_teacher_feedback_summary(
+                [r["teacher_account_sid"] for r in rows if r.get("teacher_account_sid")]
+            )
+        except Exception:
+            logger.exception("feedback summary failed sid=%s", sid)
+
+    return {
+        "sid": sid,
+        "teachers": [
+            _to_frontend_teacher(r, feedback_map.get(r.get("teacher_account_sid")))
+            for r in rows
+        ],
+    }

@@ -219,6 +219,10 @@ class JarandaReplica:
               rt.last_responded_at,
               rt._created_at AS created_at,
               t.name AS teacher_name,
+              t.experience_hour AS experience_hour,
+              t.experience_hour_for_play AS experience_hour_for_play,
+              t.experience_hour_for_study AS experience_hour_for_study,
+              t.thumbnail_profile_url AS thumbnail_profile_url,
               tpv.viewed_at AS viewed_at,
               tpv.viewed_count AS viewed_count
             FROM recommendation_teachers rt
@@ -259,6 +263,10 @@ class JarandaReplica:
               rt.last_responded_at,
               rt._created_at AS created_at,
               t.name AS teacher_name,
+              t.experience_hour AS experience_hour,
+              t.experience_hour_for_play AS experience_hour_for_play,
+              t.experience_hour_for_study AS experience_hour_for_study,
+              t.thumbnail_profile_url AS thumbnail_profile_url,
               tpv.viewed_at AS viewed_at,
               tpv.viewed_count AS viewed_count
             FROM recommendation_teachers rt
@@ -282,6 +290,48 @@ class JarandaReplica:
                 rec_sid = str(m.pop("recommendation_sid"))
                 if rec_sid in result:
                     result[rec_sid].append(m)
+        return result
+
+    async def get_teacher_feedback_summary(
+        self, teacher_account_sids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """선생님별 부모님 평가 집계. {sid: {review_count, recommend_count, recommend_rate}}.
+
+        - parent_feedback.status = 2 (완료된 리뷰)만 집계
+        - recommend_rate = recommend_count / review_count * 100 (0~100)
+        """
+        if not teacher_account_sids:
+            return {}
+
+        query = text(
+            """
+            SELECT
+              teacher_account_sid,
+              COUNT(*) AS review_count,
+              SUM(CASE WHEN recommend = 1 THEN 1 ELSE 0 END) AS recommend_count
+            FROM parent_feedback
+            WHERE teacher_account_sid IN :sids
+              AND status = 2
+            GROUP BY teacher_account_sid
+            """
+        ).bindparams(bindparam("sids", expanding=True))
+
+        result: dict[str, dict[str, Any]] = {
+            sid: {"review_count": 0, "recommend_count": 0, "recommend_rate": None}
+            for sid in teacher_account_sids
+        }
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"sids": teacher_account_sids})
+            for row in rows:
+                m = row._mapping
+                sid = m["teacher_account_sid"]
+                if sid not in result:
+                    continue
+                rc = int(m["review_count"] or 0)
+                rec = int(m["recommend_count"] or 0)
+                result[sid]["review_count"] = rc
+                result[sid]["recommend_count"] = rec
+                result[sid]["recommend_rate"] = round(rec / rc * 100, 1) if rc > 0 else None
         return result
 
 

@@ -2,6 +2,9 @@
 
 저장소: matching-ops 전용 Cloud SQL (PostgreSQL). vibe-cs DB와 분리.
 인증: require_auth_full → author_email + author_name 기록.
+
+메모 작성/삭제 시 application_snapshot도 함께 갱신 — "관리 신청서 목록" 탭이
+자란다 prod에서 신청서가 사라진 후에도 이력을 유지하기 위함.
 """
 from __future__ import annotations
 
@@ -12,7 +15,9 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
 from src.auth import require_auth_full
+from src.db import get_replica
 from src.memo_store import get_memo_store, memo_store_available
+from src.snapshot_store import get_snapshot_store, snapshot_store_available
 
 router = APIRouter(prefix="/api/applications", tags=["memos"])
 logger = logging.getLogger(__name__)
@@ -29,6 +34,38 @@ def _require_store() -> Any:
     return get_memo_store()
 
 
+async def _refresh_snapshot(sid: str) -> None:
+    """자란다 replica에서 신청서 fetch → snapshot UPSERT. 실패는 graceful.
+
+    신청서가 자란다 prod에서 삭제됐거나 replica 지연이면 fetch 실패 — 그 경우 기존
+    snapshot row 유지 (있으면). 메모 생성 자체는 성공시킨다.
+    """
+    if not snapshot_store_available():
+        return
+    try:
+        from src.routes.applications import to_snapshot_fields
+        rec = await get_replica().get_recommendation(sid)
+        if rec is None:
+            logger.warning("snapshot refresh skipped — recommendation %s not in replica", sid)
+            return
+        fields = to_snapshot_fields(rec)
+        await get_snapshot_store().upsert(sid, fields)
+    except Exception:
+        logger.exception("snapshot upsert failed sid=%s (graceful)", sid)
+
+
+async def _maybe_drop_snapshot(sid: str) -> None:
+    """잔여 메모 0건이면 snapshot도 제거 — '메모 있는 동안만 이력 보존' 정책."""
+    if not snapshot_store_available():
+        return
+    try:
+        store = get_snapshot_store()
+        if await store.memo_count(sid) == 0:
+            await store.delete(sid)
+    except Exception:
+        logger.exception("snapshot drop failed sid=%s (graceful)", sid)
+
+
 @router.post("/{sid}/memos")
 async def create_memo(
     body: MemoCreate,
@@ -37,7 +74,7 @@ async def create_memo(
 ) -> dict[str, Any]:
     store = _require_store()
     try:
-        return await store.create_memo(
+        memo = await store.create_memo(
             application_sid=sid,
             author_email=user["email"],
             author_name=user.get("name") or None,
@@ -47,6 +84,10 @@ async def create_memo(
     except Exception:
         logger.exception("create_memo failed sid=%s", sid)
         raise HTTPException(status_code=503, detail="memo store query failed")
+
+    # 메모 저장 성공 후 snapshot 최신화 (실패는 graceful)
+    await _refresh_snapshot(sid)
+    return memo
 
 
 @router.get("/{sid}/memos")
@@ -75,4 +116,7 @@ async def delete_memo(
         raise HTTPException(status_code=503, detail="memo store query failed")
     if not ok:
         raise HTTPException(status_code=404, detail="memo not found or not author")
+
+    # 잔여 메모 0건이면 snapshot도 삭제 — 관리 신청서 목록에서 빠짐
+    await _maybe_drop_snapshot(sid)
     return {"deleted": True, "id": memo_id}
