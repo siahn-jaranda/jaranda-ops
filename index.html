@@ -331,7 +331,10 @@ input, textarea, select { font-family: inherit; }
   display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
 }
 .dp-head .id-line { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.dp-head .id { font-size: 11px; color: #9CA3AF; font-variant-numeric: tabular-nums; }
+.dp-head .id { font-size: 11px; color: #6B7280; font-variant-numeric: tabular-nums; text-decoration: none; }
+.dp-head a.id:hover { color: #1B4FB8; text-decoration: underline; }
+.region a, .tr-meta a { color: inherit; text-decoration: none; }
+.region a:hover, .tr-meta a:hover { color: #1B4FB8; text-decoration: underline; }
 .dp-head .name { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: #0F172A; }
 .dp-head .name .sub { color: #6B7280; font-weight: 500; font-size: 14px; }
 .dp-head .sub-line { font-size: 12.5px; color: #6B7280; margin-top: 4px; }
@@ -354,6 +357,9 @@ input, textarea, select { font-family: inherit; }
 }
 .teacher-card .av img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .teacher-card .av.empty { background: #EEF1F4; color: #9CA3AF; }
+.teacher-card .tc-edu {
+  font-size: 12px; color: #4B5563; margin-top: 2px; line-height: 1.35;
+}
 .teacher-card .tc-stats {
   margin-top: 8px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
 }
@@ -693,6 +699,8 @@ input, textarea, select { font-family: inherit; }
 // ====== CONFIG ======
 const API_BASE = 'https://matching-ops-api-266295307740.asia-northeast3.run.app';
 const GOOGLE_CLIENT_ID = '266295307740-qq4ra3mgga9uv5e58pm5hag1pq668l6k.apps.googleusercontent.com';
+const CONSOLE_BASE = 'https://console.jaranda.kr/visit/recommendation-system';
+function consoleUrl(id) { return `${CONSOLE_BASE}/${(id||'').replace(/^SID-/, '')}`; }
 
 // ====== STATIC META ======
 // status는 운영용으로 "매칭 전 / 매칭 완료 / 취소" 3-단계만 사용.
@@ -920,14 +928,18 @@ function backendToApp(r) {
 
   // 추천 상태/선생님
   const teachers = r.teachers || [];
+  // 매칭 확정된 선생님 raw 이름 — 슬롯의 "수락한 선생님" 라벨 판별용
+  const matchedRaw = (r.matchedTeacher || '').trim();
   const mapTeacher = (t) => {
-    if (!t) return { name: '—', stateKey: 'searching', note: '', viewed: false, viewedAt: null };
+    if (!t) return { name: '—', stateKey: 'searching', note: '', viewed: false, viewedAt: null, accepted: false };
     const sk = t.stat && t.stat.includes('확정') ? 'accepted'
             : t.stat && t.stat.includes('수락') ? 'accepted'
             : t.stat && t.stat.includes('응답완료') ? 'accepted'
             : t.stat && t.stat.includes('백업') ? 'backup'
             : t.stat && t.stat.includes('거절') ? 'declined'
             : 'pending';
+    const rawName = (t.name || '').trim();
+    const accepted = !!(matchedRaw && rawName && rawName === matchedRaw);
     const viewedAtLabel = t.viewed_at ? (function(iso){
       const d = new Date(iso); if (isNaN(d.getTime())) return '열람';
       const pad = n => String(n).padStart(2,'0');
@@ -943,6 +955,9 @@ function backendToApp(r) {
       studyHours: Number(t.study_hours || 0),
       reviewCount: Number(t.review_count || 0),
       recommendRate: t.recommend_rate,
+      university: t.university || '',
+      major: t.major || '',
+      accepted,
     };
   };
   const responded = teachers.filter(t => t.stat && (t.stat.includes('수락') || t.stat.includes('응답완료')));
@@ -960,7 +975,9 @@ function backendToApp(r) {
     receivedAt: r.date || '',
     deadline: r.deadlineLabel || '—',
     deadlineState: r.deadlineState || 'ok',
-    probability: r.prob != null ? r.prob : 0,
+    // backend prob: { value: 0~100, source: 'heuristic'|'actual' }. 화면엔 value만 사용
+    probability: (r.prob && typeof r.prob === 'object' ? r.prob.value : r.prob) || 0,
+    probabilitySource: r.prob && typeof r.prob === 'object' ? r.prob.source : null,
     owner: r.assignee || '—',
     status: r.status || '', statusKey,
     recommendation: {
@@ -1163,6 +1180,14 @@ function viewedSummary(rec) {
 }
 
 // ====== VIEWS ======
+// 슬롯 라벨: 그 선생님이 매칭 확정된 사람이면 "수락한 선생님", 아니면 "지원한 선생님".
+// 응답 순서 정렬은 backend의 ORDER BY가 결정 (수락이 항상 1번 자리에 오는 게 아님).
+function teacherLabel(t, short) {
+  const accepted = t && t.accepted;
+  if (short) return accepted ? '수락' : '지원';
+  return accepted ? '수락한 선생님' : '지원한 선생님';
+}
+
 function teacherLineCard(label, t) {
   const meta = REC_STATE_META[t.stateKey] || REC_STATE_META.pending;
   const hasName = t.name && t.name !== '—';
@@ -1189,7 +1214,7 @@ function renderCardView(apps) {
         </div>
         <div class="id-body">
           <div>${a.schedule}</div>
-          <div class="region">${a.region} · ${a.id}</div>
+          <div class="region">${a.region} · <a href="${consoleUrl(a.id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="자란다 콘솔에서 열기">${a.id} ↗</a></div>
           ${a.memoCount ? `<div class="memo-meta">💬 메모 ${a.memoCount}건 · 최근 ${fmtRelativeTime(a.lastMemoAt)}</div>` : ''}
         </div>
       </div>
@@ -1198,8 +1223,8 @@ function renderCardView(apps) {
           <div class="section-label">선생님 추천</div>
           ${recPill(a.recommendation.stateKey, null, true)}
         </div>
-        ${teacherLineCard('1지망', a.recommendation.t1)}
-        ${teacherLineCard('2지망', a.recommendation.t2)}
+        ${teacherLineCard(teacherLabel(a.recommendation.t1), a.recommendation.t1)}
+        ${teacherLineCard(teacherLabel(a.recommendation.t2), a.recommendation.t2)}
       </div>
       <div class="col-priority">
         <div class="top">
@@ -1322,15 +1347,15 @@ function renderTableView(apps) {
         <div>${statusBadge(a.statusKey, 'sm')}</div>
         <div style="min-width:0">
           <div class="tr-name">${a.child}</div>
-          <div class="tr-meta">${a.schedule} · ${a.region}</div>
+          <div class="tr-meta">${a.schedule} · ${a.region} · <a href="${consoleUrl(a.id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="자란다 콘솔에서 열기">${a.id} ↗</a></div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px">
           ${dlTag(a.deadline, a.deadlineState)}
           <div class="tr-recv">접수 ${a.receivedAt}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
-          ${compactTeacher('1', a.recommendation.t1)}
-          ${compactTeacher('2', a.recommendation.t2)}
+          ${compactTeacher(teacherLabel(a.recommendation.t1, true), a.recommendation.t1)}
+          ${compactTeacher(teacherLabel(a.recommendation.t2, true), a.recommendation.t2)}
         </div>
         <div>${probBar(a.probability, true)}</div>
         <div style="font-size:12.5px;color:#4B5563;display:flex;align-items:center;gap:6px">
@@ -1371,6 +1396,7 @@ function teacherDetail(label, t) {
         ${hasName ? `<span class="viewed-badge sm ${t.viewed?'viewed-yes':'viewed-no'}">${eyeIcon(t.viewed, 10)}${t.viewed?'부모님 열람':'미열람'}</span>` : ''}
       </div>
       <div class="nm ${hasName?'':'empty'}">${hasName ? t.name : '후보 없음'}</div>
+      ${hasName && (t.university || t.major) ? `<div class="tc-edu">${_esc(t.university || '')}${t.university && t.major ? ' · ' : ''}${_esc(t.major || '')}</div>` : ''}
       <div class="note">
         <span>${t.note||''}</span>
         ${hasName && t.viewed && t.viewedAt ? `<span class="dim">·</span><span style="color:#6B7280">${t.viewedAt} 열람</span>` : ''}
@@ -1426,7 +1452,7 @@ function renderDetailPanel(app) {
         <div class="id-line">
           ${statusBadge(app.statusKey)}
           ${detailBadges(app)}
-          <span class="id">${app.id}</span>
+          <a class="id" href="${consoleUrl(app.id)}" target="_blank" rel="noopener" title="자란다 콘솔에서 열기">${app.id} ↗</a>
         </div>
         <div class="name">${app.child}</div>
         <div class="sub-line">${app.schedule}</div>
@@ -1443,9 +1469,8 @@ function renderDetailPanel(app) {
             ${recPill(app.recommendation.stateKey, null, true)}
           </div>
         </div>
-        ${teacherDetail('1지망', app.recommendation.t1)}
-        ${teacherDetail('2지망', app.recommendation.t2)}
-        <button class="btn btn-secondary btn-sm" onclick="alert('백업 후보 추가 (구현 예정)')"><span class="icon">＋</span>백업 후보 추가</button>
+        ${teacherDetail(teacherLabel(app.recommendation.t1), app.recommendation.t1)}
+        ${teacherDetail(teacherLabel(app.recommendation.t2), app.recommendation.t2)}
       </div>
 
       <div class="dp-section">

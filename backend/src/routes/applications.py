@@ -272,6 +272,8 @@ def _to_frontend_teacher(
         "play_hours": float(r.get("experience_hour_for_play") or 0),
         "study_hours": float(r.get("experience_hour_for_study") or 0),
         "profile_url": r.get("thumbnail_profile_url") or "",
+        "university": (r.get("university") or "").strip(),
+        "major": (r.get("major") or "").strip(),
         "review_count": int(fb.get("review_count") or 0),
         "recommend_count": int(fb.get("recommend_count") or 0),
         "recommend_rate": fb.get("recommend_rate"),  # None | float (0~100)

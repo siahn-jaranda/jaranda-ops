@@ -223,6 +223,8 @@ class JarandaReplica:
               t.experience_hour_for_play AS experience_hour_for_play,
               t.experience_hour_for_study AS experience_hour_for_study,
               t.thumbnail_profile_url AS thumbnail_profile_url,
+              t.university AS university,
+              t.major AS major,
               tpv.viewed_at AS viewed_at,
               tpv.viewed_count AS viewed_count
             FROM recommendation_teachers rt
@@ -267,6 +269,8 @@ class JarandaReplica:
               t.experience_hour_for_play AS experience_hour_for_play,
               t.experience_hour_for_study AS experience_hour_for_study,
               t.thumbnail_profile_url AS thumbnail_profile_url,
+              t.university AS university,
+              t.major AS major,
               tpv.viewed_at AS viewed_at,
               tpv.viewed_count AS viewed_count
             FROM recommendation_teachers rt
