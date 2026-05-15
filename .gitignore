@@ -1,0 +1,19 @@
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# misc
+NEXT.md
