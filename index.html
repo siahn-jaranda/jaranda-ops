@@ -723,79 +723,8 @@ const TONE_FG = {
   amber: '#8A5B00', red: '#A4271A', purple: '#4634A8', slate: '#4B5563',
 };
 
-// ====== MOCK DATA (핸드오프 APPLICATIONS 스키마) ======
-let APPS = [
-  {
-    id: 'SID-2418', parent: '김민서', parentTag: '신규 부모님', child: '지우', childAge: '초2',
-    region: '서울 마포구', subject: '수학', schedule: '주 2회 · 화/목 17:00',
-    receivedAt: '5/13 09:21', deadline: '오늘 18:00', deadlineState: 'urgent',
-    probability: 78, owner: '신진섭', status: '추천중', statusKey: 'recommending',
-    lastAction: '선생님 1 응답 대기 · 14분 전',
-    recommendation: {
-      stateKey: 'waiting',
-      t1: { name: '이수민 선생님', stateKey: 'accepted', note: '오후 5시 가능', viewed: true,  viewedAt: '5/13 13:42' },
-      t2: { name: '정유진 선생님', stateKey: 'pending',  note: '3시간 경과',  viewed: false, viewedAt: null },
-    },
-    history: { rebook: false, prevTeachers: 0, notes: '첫 매칭' },
-    extras: ['방문 수업', '여자 선생님 선호'], result: null,
-  },
-  {
-    id: 'SID-2419', parent: '장하늘', parentTag: '기존 부모님', child: '서윤', childAge: '초4',
-    region: '서울 강서구', subject: '영어', schedule: '주 3회 · 월/수/금 16:30',
-    receivedAt: '5/13 10:02', deadline: '내일 12:00', deadlineState: 'soon',
-    probability: 91, owner: '김지윤', status: '매칭 완료', statusKey: 'matched',
-    lastAction: '선생님 1 수락 · 1시간 전',
-    recommendation: {
-      stateKey: 'accepted',
-      t1: { name: '한지호 선생님', stateKey: 'accepted', note: '이전 매칭 동일', viewed: true, viewedAt: '5/13 11:08' },
-      t2: { name: '최서아 선생님', stateKey: 'backup',   note: '대기 풀',       viewed: true, viewedAt: '5/13 11:09' },
-    },
-    history: { rebook: true, prevTeachers: 1, notes: '재이용 2회차' },
-    extras: ['기존 선생님 연장'], result: '성공',
-  },
-  {
-    id: 'SID-2420', parent: '윤서진', parentTag: '신규 부모님', child: '도윤', childAge: '초1',
-    region: '경기 성남시', subject: '독서·논술', schedule: '주 1회 · 토 10:00',
-    receivedAt: '5/12 18:44', deadline: '오늘 22:00', deadlineState: 'urgent',
-    probability: 42, owner: '노태효', status: '선생님 미정', statusKey: 'searching',
-    lastAction: '추천 후보 재탐색 · 30분 전',
-    recommendation: {
-      stateKey: 'searching',
-      t1: { name: '—', stateKey: 'declined', note: '스케줄 불가', viewed: false, viewedAt: null },
-      t2: { name: '—', stateKey: 'declined', note: '지역 불가',   viewed: false, viewedAt: null },
-    },
-    history: { rebook: false, prevTeachers: 0, notes: '응답 속도 느림' },
-    extras: ['주말 한정'], result: null,
-  },
-  {
-    id: 'SID-2421', parent: '송예린', parentTag: '기존 부모님', child: '하준', childAge: '초3',
-    region: '서울 송파구', subject: '과학실험', schedule: '격주 · 일 14:00',
-    receivedAt: '5/12 11:10', deadline: '5/15 09:00', deadlineState: 'ok',
-    probability: 65, owner: '김성환', status: '추천중', statusKey: 'recommending',
-    lastAction: '선생님 2 수락 · 2시간 전',
-    recommendation: {
-      stateKey: 'accepted',
-      t1: { name: '오민재 선생님', stateKey: 'pending',  note: '확인 요청',  viewed: true,  viewedAt: '5/12 19:30' },
-      t2: { name: '신해린 선생님', stateKey: 'accepted', note: '전과목 가능', viewed: false, viewedAt: null },
-    },
-    history: { rebook: true, prevTeachers: 2, notes: '재이용 3회차' },
-    extras: ['남자 선생님 선호'], result: null,
-  },
-  {
-    id: 'SID-2422', parent: '노가람', parentTag: '신규 부모님', child: '라온', childAge: '유아7세',
-    region: '인천 연수구', subject: '한글·놀이', schedule: '주 2회 · 월/수 10:30',
-    receivedAt: '5/11 15:33', deadline: '5/16 18:00', deadlineState: 'ok',
-    probability: 58, owner: '이승석', status: '부모님 확인', statusKey: 'review',
-    lastAction: '추천서 전달 · 4시간 전',
-    recommendation: {
-      stateKey: 'review',
-      t1: { name: '권하영 선생님', stateKey: 'accepted', note: '유아 전문', viewed: true, viewedAt: '5/12 16:48' },
-      t2: { name: '배도현 선생님', stateKey: 'accepted', note: '근거리',   viewed: true, viewedAt: '5/12 17:02' },
-    },
-    history: { rebook: false, prevTeachers: 0, notes: '응답 빠름' },
-    extras: ['놀이형 수업'], result: null,
-  },
-];
+// 데이터는 백엔드(loadLiveData)에서만 채움. 초기 mock 없음.
+let APPS = [];
 
 const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','강구슬'];
 
@@ -1200,6 +1129,9 @@ function teacherLineCard(label, t) {
 }
 
 function renderCardView(apps) {
+  if (!apps.length) {
+    return `<div class="empty-feed">${authToken ? '최근 72시간 내 매칭 신청서가 없습니다.' : '로그인 후 매칭 신청서가 표시됩니다.'}</div>`;
+  }
   return `<div class="cards">${apps.map(a => `
     <div class="app-card ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
       <div class="col-identity">
@@ -1337,6 +1269,9 @@ async function releaseHandler(id) {
 }
 
 function renderTableView(apps) {
+  if (!apps.length) {
+    return `<div class="empty-feed">${authToken ? '최근 72시간 내 매칭 신청서가 없습니다.' : '로그인 후 매칭 신청서가 표시됩니다.'}</div>`;
+  }
   return `<div class="table-card">
     <div class="table-head">
       <div>상태</div><div>신청 정보</div><div>마감 / 접수</div>
