@@ -1326,7 +1326,7 @@ function teacherDetail(label, t) {
         ${hasName ? `<span class="viewed-badge sm ${t.viewed?'viewed-yes':'viewed-no'}">${eyeIcon(t.viewed, 10)}${t.viewed?'부모님 열람':'미열람'}</span>` : ''}
       </div>
       <div class="nm ${hasName?'':'empty'}">${hasName ? t.name : '후보 없음'}</div>
-      ${hasName && (t.university || t.major) ? `<div class="tc-edu">${_esc(t.university || '')}${t.university && t.major ? ' · ' : ''}${_esc(t.major || '')}</div>` : ''}
+      ${hasName && (t.university || t.major) ? `<div class="tc-edu">${escapeHtml(t.university || '')}${t.university && t.major ? ' · ' : ''}${escapeHtml(t.major || '')}</div>` : ''}
       <div class="note">
         <span>${t.note||''}</span>
         ${hasName && t.viewed && t.viewedAt ? `<span class="dim">·</span><span style="color:#6B7280">${t.viewedAt} 열람</span>` : ''}
