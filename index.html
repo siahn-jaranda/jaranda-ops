@@ -121,6 +121,32 @@ input, textarea, select { font-family: inherit; }
   box-shadow: 0 1px 2px rgba(15,23,42,0.06);
 }
 .seg-btn .icon { font-size: 11px; }
+.date-range {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px; background: #F4F6F8; border-radius: 8px;
+  font-size: 12.5px;
+}
+.date-range .lbl { color: #6B7280; font-weight: 600; font-size: 11.5px; }
+.date-range input[type="date"], .date-range input[type="number"] {
+  padding: 5px 7px; font-size: 12px; border: 1px solid #D8DDE3;
+  border-radius: 6px; background: #fff; color: #1E2530;
+  font-variant-numeric: tabular-nums;
+}
+.date-range .dash { color: #9CA3AF; }
+.pager {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 6px; background: #F4F6F8; border-radius: 8px;
+  font-size: 12.5px;
+}
+.pager .pg-btn {
+  width: 26px; height: 26px; border-radius: 6px;
+  background: #fff; border: 1px solid #D8DDE3; color: #1E2530;
+  font-size: 14px; font-weight: 700; line-height: 1;
+}
+.pager .pg-btn:hover:not(:disabled) { background: #EEF2FF; }
+.pager .pg-btn:disabled { color: #D1D5DB; background: #F9FAFB; cursor: not-allowed; }
+.pager .pg-info { color: #4B5563; font-weight: 600; padding: 0 6px; font-variant-numeric: tabular-nums; }
+.pager .pg-info #pg-current { color: #1B4FB8; }
 .dropdown { position: relative; }
 .dropdown-trigger {
   display: inline-flex; align-items: center; gap: 6px;
@@ -381,6 +407,22 @@ input, textarea, select { font-family: inherit; }
 .teacher-card .tc-wage-subj { color: #4B5563; font-weight: 600; }
 .teacher-card .tc-wage-amt { color: #1E2530; font-weight: 700; }
 .teacher-card .tc-wage-amt .dim { color: #9CA3AF; font-weight: 500; margin-left: 4px; }
+.teachers-toggle {
+  display: block; width: 100%; padding: 8px 10px; margin: 6px 0;
+  background: #F4F6F8; border: 1px dashed #D8DDE3; border-radius: 8px;
+  color: #4B5563; font-size: 12.5px; font-weight: 600; text-align: center;
+}
+.teachers-toggle:hover { background: #EEF2FF; color: #1B4FB8; border-color: #C7D2FE; }
+.teachers-rest { display: flex; flex-direction: column; gap: 6px; }
+.muted-count { color: #9CA3AF; font-size: 11.5px; font-weight: 500; margin-left: 4px; }
+.kv .v .dim { color: #9CA3AF; font-weight: 500; margin-left: 4px; }
+.teacher-card .tc-alimtalk {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: 6px; font-size: 11.5px;
+}
+.teacher-card .tc-alimtalk-lbl { color: #6B7280; font-weight: 600; }
+.teacher-card .tc-alimtalk-val { color: #1E2530; font-weight: 600; font-variant-numeric: tabular-nums; }
+.teacher-card .tc-alimtalk-val .dim { color: #9CA3AF; font-weight: 500; }
 .teacher-card .body { flex: 1; min-width: 0; }
 .teacher-card .row1 { display: flex; align-items: center; gap: 6px; }
 .teacher-card .row1 .lbl { font-size: 11px; font-weight: 700; color: #6B7280; letter-spacing: 0.04em; }
@@ -600,12 +642,24 @@ input, textarea, select { font-family: inherit; }
           <div class="dropdown-menu" id="owner-menu" style="display:none"></div>
         </div>
         <div class="seg-group" id="sort-seg">
-          <button class="seg-btn active" data-sort="urgent" onclick="setSort('urgent')"><span class="icon">⏱</span>취소 임박순</button>
+          <button class="seg-btn active" data-sort="recent" onclick="setSort('recent')"><span class="icon">🕐</span>최근 접수순</button>
+          <button class="seg-btn" data-sort="urgent" onclick="setSort('urgent')"><span class="icon">⏱</span>취소 임박순</button>
           <button class="seg-btn" data-sort="prob" onclick="setSort('prob')"><span class="icon">📈</span>확률 높은순</button>
-          <button class="seg-btn" data-sort="recent" onclick="setSort('recent')"><span class="icon">🕐</span>접수순</button>
         </div>
       </div>
       <div class="toolbar-left" style="gap:10px">
+        <div class="date-range" title="신청서 접수일 기준 기간 (KST). 기본은 2026-05-11 이후">
+          <label class="lbl">기간</label>
+          <input type="date" id="filter-from" onchange="onDateChange()">
+          <span class="dash">~</span>
+          <input type="date" id="filter-to" onchange="onDateChange()">
+          <button class="btn btn-secondary btn-sm" onclick="resetDateFilter()">초기화</button>
+        </div>
+        <div class="pager" id="pager">
+          <button class="pg-btn" id="pg-prev" onclick="gotoPage(state.page-1)" title="이전 페이지">‹</button>
+          <span class="pg-info"><span id="pg-current">1</span> / <span id="pg-total">1</span></span>
+          <button class="pg-btn" id="pg-next" onclick="gotoPage(state.page+1)" title="다음 페이지">›</button>
+        </div>
         <div class="seg-group" id="layout-seg">
           <button class="seg-btn active" data-layout="card" onclick="setLayout('card')"><span class="icon">▭</span>카드</button>
           <button class="seg-btn" data-layout="table" onclick="setLayout('table')"><span class="icon">≡</span>테이블</button>
@@ -742,14 +796,31 @@ let APPS = [];
 const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','강구슬'];
 
 // ====== STATE ======
+// 페이지네이션: 화면당 PAGE_SIZE, 서버 fetch는 BATCH_SIZE 단위 (=2 페이지 분량).
+// 3페이지로 넘어가면 2번째 batch fetch — 로딩 부담 분산.
+const PAGE_SIZE = 15;
+const BATCH_SIZE = 30;
+const DEFAULT_FROM = '2026-05-11';
+
 let state = {
   tab: 'matching',
-  sort: 'urgent',
+  sort: 'recent',
   owner: '전체',
   layout: 'card',
   selectedId: APPS[0]?.id || null,
   search: '',
+  // 신청서 접수일 기간 (YYYY-MM-DD, KST). 비어있으면 backend는 최근 72h, 프론트는 기본값 주입.
+  dateFrom: DEFAULT_FROM,
+  dateTo: '',
+  // 페이지네이션 상태
+  page: 1,
+  loadedBatches: 0,   // 지금까지 fetch 완료한 batch 수 (각 batch = BATCH_SIZE 건)
+  hasMore: true,      // 마지막 batch가 BATCH_SIZE 미만이면 false
+  loading: false,
 };
+
+// 페이지별로 채워진 전체 신청서 누적 (필터별로 재시작)
+let APPS_ALL = [];
 
 // ====== AUTH ======
 let authToken = localStorage.getItem('mo-token') || '';
@@ -834,7 +905,8 @@ async function handleGoogleCredential(response) {
     localStorage.setItem('mo-token', authToken);
     localStorage.setItem('mo-email', authEmail);
     showApp();
-    loadLiveData();
+    _initDateInputs();
+    loadLiveData(true);
   } catch (e) {
     showGate('로그인 오류: ' + e.message);
   }
@@ -901,6 +973,10 @@ function backendToApp(r) {
       university: t.university || '',
       major: t.major || '',
       wageBySubject: Array.isArray(t.wage_by_subject) ? t.wage_by_subject : [],
+      alimtalkCount: Number(t.alimtalk_count || 0),
+      alimtalkLastSentAt: t.alimtalk_last_sent_at || null,
+      alimtalkLastTemplate: t.alimtalk_last_template || '',
+      activeVisitCount: Number(t.active_visit_count || 0),
       accepted,
     };
   };
@@ -908,6 +984,15 @@ function backendToApp(r) {
   const recStateKey = responded.length >= 1
     ? (responded.some(t => t.stat.includes('지원')) ? 'applied' : 'accepted')
     : (teachers.length ? 'pending' : 'searching');
+  // 전체 요청 선생님 (응답완료 + 요청됨 + 거절 + 미응답). 응답완료/지원 우선, 그 다음 요청됨/미응답/거절.
+  const _stateOrder = (t) => t.stat?.includes('응답완료') || t.stat?.includes('수락') || t.stat?.includes('지원') ? 0
+                          : t.stat?.includes('요청됨') ? 1
+                          : t.stat?.includes('거절')   ? 3
+                          : 2;
+  const allTeachersMapped = teachers
+    .slice()
+    .sort((a,b) => _stateOrder(a) - _stateOrder(b))
+    .map(mapTeacher);
 
   // isNew: backend가 confirmed_count > 0 여부로 계산 (deprecated new_parent 폐기)
   const parentTag = r.isNew === true ? '신규 부모님' : r.isNew === false ? '기존 부모님' : '—';
@@ -919,6 +1004,8 @@ function backendToApp(r) {
     region: r.region || '',
     schedule: (r.requestChips && r.requestChips.length) ? r.requestChips.slice(0,2).join(' · ') : '—',
     receivedAt: r.date || '',
+    receivedAtFull: r.createdAtFull || '',
+    receivedAtIso: r.createdAtIso || null,
     deadline: r.deadlineLabel || '—',
     deadlineState: r.deadlineState || 'ok',
     // backend prob: { value: 0~100, source: 'heuristic'|'actual' }. 화면엔 value만 사용
@@ -930,6 +1017,8 @@ function backendToApp(r) {
       stateKey: recStateKey,
       t1: mapTeacher(responded[0]),
       t2: mapTeacher(responded[1]),
+      all: allTeachersMapped,           // 전체 요청 선생님 (정렬됨)
+      totalCount: allTeachersMapped.length,
     },
     history: {
       rebook: r.isNew === false,
@@ -953,10 +1042,23 @@ function backendToApp(r) {
   };
 }
 
-async function loadLiveData(force) {
-  if (!authToken) { showGate(); return; }
+function _buildAppsQuery(offset) {
+  const params = new URLSearchParams();
+  params.set('limit', String(BATCH_SIZE));
+  params.set('offset', String(offset));
+  if (state.dateFrom) params.set('from', state.dateFrom);
+  if (state.dateTo)   params.set('to',   state.dateTo);
+  return params.toString();
+}
+
+// 다음 batch 1개 fetch. force=true면 401 처리 후 false 반환.
+async function _fetchNextBatch() {
+  if (state.loading) return false;
+  if (!state.hasMore && state.loadedBatches > 0) return false;
+  state.loading = true;
   try {
-    const r = await fetch(API_BASE + '/api/applications?limit=30', {
+    const offset = state.loadedBatches * BATCH_SIZE;
+    const r = await fetch(API_BASE + '/api/applications?' + _buildAppsQuery(offset), {
       headers: {'Authorization': 'Bearer ' + authToken},
     });
     if (r.status === 401) {
@@ -964,26 +1066,94 @@ async function loadLiveData(force) {
       localStorage.removeItem('mo-token');
       localStorage.removeItem('mo-email');
       showGate('세션이 만료되었습니다. 다시 로그인해주세요.');
-      return;
+      return false;
     }
     if (!r.ok) throw new Error('api-error ' + r.status);
     const data = await r.json();
-    if (data && Array.isArray(data.rows) && data.rows.length > 0) {
-      APPS = data.rows.map(backendToApp);
-      // 담당자 dropdown 옵션 갱신
-      const owners = Array.from(new Set(APPS.map(a => a.owner).filter(Boolean)));
-      state.ownerOptions = owners;
-      // 첫 항목 선택
-      state.selectedId = APPS[0]?.id || null;
-      setDataSource('live');
-      render();
-    } else {
-      setDataSource('mock');
-    }
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const mapped = rows.map(backendToApp);
+    APPS_ALL = APPS_ALL.concat(mapped);
+    state.loadedBatches += 1;
+    state.hasMore = !!data.hasMore && rows.length >= BATCH_SIZE;
+    // 담당자 dropdown 옵션 갱신
+    const owners = Array.from(new Set(APPS_ALL.map(a => a.owner).filter(Boolean)));
+    state.ownerOptions = owners;
+    return true;
   } catch (e) {
-    console.warn('Live data fetch failed, mock fallback:', e.message);
+    console.warn('Batch fetch failed:', e.message);
+    return false;
+  } finally {
+    state.loading = false;
+  }
+}
+
+async function loadLiveData(force) {
+  if (!authToken) { showGate(); return; }
+  // force=true면 처음부터 다시 (필터 변경 또는 새로고침)
+  if (force) {
+    APPS_ALL = [];
+    state.loadedBatches = 0;
+    state.hasMore = true;
+    state.page = 1;
+  }
+  // 페이지에 필요한 데이터까지 batch 로드
+  const needed = state.page * PAGE_SIZE;
+  while (APPS_ALL.length < needed && state.hasMore) {
+    const ok = await _fetchNextBatch();
+    if (!ok) break;
+  }
+  if (APPS_ALL.length > 0) {
+    APPS = APPS_ALL;
+    state.selectedId = _currentPageApps()[0]?.id || null;
+    setDataSource('live');
+  } else {
     setDataSource('mock');
   }
+  render();
+}
+
+// 현재 페이지 슬라이스
+function _currentPageApps() {
+  const filtered = getApps();
+  const start = (state.page - 1) * PAGE_SIZE;
+  return filtered.slice(start, start + PAGE_SIZE);
+}
+
+async function gotoPage(p) {
+  const totalPages = _totalPages();
+  if (p < 1 || (p > totalPages && !state.hasMore)) return;
+  state.page = Math.max(1, p);
+  // 필요한 batch 부족하면 fetch
+  const needed = state.page * PAGE_SIZE;
+  while (APPS_ALL.length < needed && state.hasMore) {
+    const ok = await _fetchNextBatch();
+    if (!ok) break;
+  }
+  state.selectedId = _currentPageApps()[0]?.id || null;
+  render();
+}
+
+function _totalPages() {
+  const filtered = getApps();
+  const known = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // 더 가져올 수 있으면 +1 (현재 페이지가 마지막 batch 도달 시에만 의미 있음)
+  return state.hasMore ? known + 0 : known;
+}
+
+function onDateChange() {
+  const f = document.getElementById('filter-from').value;
+  const t = document.getElementById('filter-to').value;
+  state.dateFrom = f || '';
+  state.dateTo = t || '';
+  loadLiveData(true);
+}
+
+function resetDateFilter() {
+  state.dateFrom = DEFAULT_FROM;
+  state.dateTo = '';
+  document.getElementById('filter-from').value = DEFAULT_FROM;
+  document.getElementById('filter-to').value = '';
+  loadLiveData(true);
 }
 
 // ====== MANAGED LIST (메모 영속화된 신청서) ======
@@ -1366,6 +1536,39 @@ function subjectsWageBlock(app) {
   return subjLine + wageLine;
 }
 
+// 신청서별 "선생님 추천 더보기" 펼침 상태. application id → bool.
+const _expanded = {};
+function toggleAllTeachers(appId) {
+  _expanded[appId] = !_expanded[appId];
+  render();
+}
+
+// 응답 완료 우선 t1/t2 → 그 외 선생님은 펼치기 토글로.
+function allTeachersBlock(app) {
+  const rec = app.recommendation || {};
+  const all = rec.all || [];
+  const acceptedKeys = new Set();
+  // t1, t2가 비어있지 않으면 우선 노출
+  const primary = [];
+  if (rec.t1 && rec.t1.name && rec.t1.name !== '—') { primary.push(rec.t1); }
+  if (rec.t2 && rec.t2.name && rec.t2.name !== '—') { primary.push(rec.t2); }
+  primary.forEach(p => acceptedKeys.add(p.name));
+  const rest = all.filter(t => !acceptedKeys.has(t.name));
+  const primaryHtml = primary.length
+    ? primary.map(t => teacherDetail(teacherLabel(t), t)).join('')
+    : (all.length ? '' : teacherDetail(teacherLabel({name:'—', stateKey:'searching'}), {name:'—', stateKey:'searching', viewed:false, viewedAt:null}));
+  const isOpen = !!_expanded[app.id];
+  const toggleHtml = rest.length
+    ? `<button class="teachers-toggle" onclick="toggleAllTeachers('${app.id}')">
+         ${isOpen ? '▴ 접기' : `▾ 요청한 다른 선생님 ${rest.length}명 보기`}
+       </button>`
+    : '';
+  const restHtml = (isOpen && rest.length)
+    ? `<div class="teachers-rest">${rest.map(t => teacherDetail(teacherLabel(t), t)).join('')}</div>`
+    : '';
+  return primaryHtml + toggleHtml + restHtml;
+}
+
 function teacherDetail(label, t) {
   const meta = REC_STATE_META[t.stateKey] || REC_STATE_META.pending;
   const hasName = t.name && t.name !== '—';
@@ -1414,6 +1617,14 @@ function teacherDetail(label, t) {
           <span class="tc-wage-subj">${escapeHtml(w.subjectName)}</span>
           <span class="tc-wage-amt">${_fmtWonShort(w.teacherWage)}<span class="dim"> · 부모 ${_fmtWonShort(w.parentCharge)}</span></span>
         </div>`).join('')}</div>` : ''}
+      ${(t.alimtalkCount > 0 || hasName) ? `<div class="tc-alimtalk">
+        <span class="tc-alimtalk-lbl">📨 알림톡</span>
+        <span class="tc-alimtalk-val">${t.alimtalkCount > 0 ? `${fmtRelativeTime(t.alimtalkLastSentAt)} · 누적 ${t.alimtalkCount}회` : '<span class="dim">미발송</span>'}</span>
+      </div>` : ''}
+      ${hasName ? `<div class="tc-alimtalk">
+        <span class="tc-alimtalk-lbl">🏠 진행중 수업</span>
+        <span class="tc-alimtalk-val">${t.activeVisitCount > 0 ? `${t.activeVisitCount}건` : '<span class="dim">없음</span>'}</span>
+      </div>` : ''}
     </div>
     <div class="state-tag tone-${meta.tone}">${meta.label}</div>
   </div>`;
@@ -1457,14 +1668,13 @@ function renderDetailPanel(app) {
 
       <div class="dp-section">
         <div class="dp-section-head">
-          <div class="section-label">선생님 추천</div>
+          <div class="section-label">선생님 추천 ${app.recommendation.totalCount > 0 ? `<span class="muted-count">· 요청 ${app.recommendation.totalCount}명</span>` : ''}</div>
           <div style="display:inline-flex;gap:6px;align-items:center">
             ${viewedSummary(app.recommendation)}
             ${recPill(app.recommendation.stateKey, null, true)}
           </div>
         </div>
-        ${teacherDetail(teacherLabel(app.recommendation.t1), app.recommendation.t1)}
-        ${teacherDetail(teacherLabel(app.recommendation.t2), app.recommendation.t2)}
+        ${allTeachersBlock(app)}
       </div>
 
       <div class="dp-section">
@@ -1474,7 +1684,7 @@ function renderDetailPanel(app) {
           : `<div class="kv"><span class="k">마감</span><span class="v">${dlTag(app.deadline, app.deadlineState)}</span></div>`}
         <div class="kv"><span class="k">매칭 확률</span><span class="v">${probBar(app.probability, true)}</span></div>
         ${isMatched && app.matchedTeacher ? `<div class="kv"><span class="k">매칭된 선생님</span><span class="v" style="font-weight:600">${escapeHtml(app.matchedTeacher)}</span></div>` : ''}
-        <div class="kv"><span class="k">접수</span><span class="v" style="color:#4B5563;font-variant-numeric:tabular-nums">${app.receivedAt}</span></div>
+        <div class="kv"><span class="k">접수</span><span class="v" style="color:#4B5563;font-variant-numeric:tabular-nums">${app.receivedAtFull || app.receivedAt}${app.receivedAtIso ? ` <span class="dim">· ${fmtRelativeTime(app.receivedAtIso)}</span>` : ''}</span></div>
         <div class="kv"><span class="k">담당자</span><span class="v">${app.owner}</span></div>
         <div class="kv"><span class="k">처리 담당</span><span class="v">${handlerInline(app)}</span></div>
       </div>
@@ -1526,7 +1736,7 @@ function renderDetailPanel(app) {
 
 // ====== APP STATE & RENDER ======
 function getApps() {
-  let list = APPS.slice();
+  let list = APPS_ALL.slice();
   if (state.owner !== '전체') list = list.filter(a => a.owner === state.owner);
   if (state.search) {
     const s = state.search.toLowerCase();
@@ -1538,22 +1748,41 @@ function getApps() {
   } else if (state.sort === 'prob') {
     list.sort((a,b) => b.probability - a.probability);
   } else {
-    list.sort((a,b) => (a.receivedAt||'').localeCompare(b.receivedAt||''));
+    // 'recent' = 최근 접수순. backend가 이미 created_at DESC로 보내지만
+    // 검색/필터 후에도 순서 유지하기 위해 receivedAt(MM/DD HH:MM) 역순.
+    list.sort((a,b) => (b.receivedAt||'').localeCompare(a.receivedAt||''));
   }
   return list;
 }
 
 function render() {
-  const apps = getApps();
-  document.getElementById('count-chip').textContent = `전체 ${apps.length}건`;
+  const filtered = getApps();                // 전체 (담당자/검색 적용된) 필터된 누적
+  const pageApps = _currentPageApps();       // 현재 페이지 슬라이스
+  const loadedLabel = state.hasMore ? `${filtered.length}+` : `${filtered.length}`;
+  document.getElementById('count-chip').textContent = `전체 ${loadedLabel}건`;
+
+  // 페이지 컨트롤
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  document.getElementById('pg-current').textContent = state.page;
+  document.getElementById('pg-total').textContent = state.hasMore ? `${totalPages}+` : totalPages;
+  document.getElementById('pg-prev').disabled = state.page <= 1;
+  document.getElementById('pg-next').disabled = state.page >= totalPages && !state.hasMore;
+
+  // 날짜 input 동기화 (외부에서 state 바뀌었을 때)
+  const fIn = document.getElementById('filter-from');
+  const tIn = document.getElementById('filter-to');
+  if (fIn && fIn.value !== state.dateFrom) fIn.value = state.dateFrom;
+  if (tIn && tIn.value !== state.dateTo)   tIn.value = state.dateTo;
 
   const listArea = document.getElementById('list-area');
   const detailArea = document.getElementById('detail-area');
 
-  if (state.layout === 'table') listArea.innerHTML = renderTableView(apps);
-  else listArea.innerHTML = renderCardView(apps);
+  if (state.layout === 'table') listArea.innerHTML = renderTableView(pageApps);
+  else listArea.innerHTML = renderCardView(pageApps);
 
-  const sel = apps.find(a => a.id === state.selectedId) || APPS.find(a => a.id === state.selectedId) || null;
+  const sel = pageApps.find(a => a.id === state.selectedId)
+            || APPS_ALL.find(a => a.id === state.selectedId)
+            || null;
   detailArea.innerHTML = renderDetailPanel(sel);
 }
 
@@ -1569,6 +1798,7 @@ function selectApp(id) {
 }
 function setSort(key) {
   state.sort = key;
+  state.page = 1;
   document.querySelectorAll('#sort-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === key));
   render();
 }
@@ -1577,7 +1807,7 @@ function setLayout(key) {
   document.querySelectorAll('#layout-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.layout === key));
   render();
 }
-function onSearch(v) { state.search = v.trim(); render(); }
+function onSearch(v) { state.search = v.trim(); state.page = 1; render(); }
 
 function switchTab(t) {
   state.tab = t;
@@ -1600,6 +1830,7 @@ function toggleOwnerDD(e) {
 }
 function setOwner(o) {
   state.owner = o;
+  state.page = 1;
   document.getElementById('owner-value').textContent = o;
   document.getElementById('owner-menu').style.display = 'none';
   render();
@@ -1856,10 +2087,18 @@ function deriveInsights() {
 
 // ====== INIT ======
 // 초기 진입: 토큰 있으면 앱 + 데이터 fetch, 없으면 게이트
+function _initDateInputs() {
+  const f = document.getElementById('filter-from');
+  const t = document.getElementById('filter-to');
+  if (f) f.value = state.dateFrom;
+  if (t) t.value = state.dateTo;
+}
+
 if (authToken) {
   showApp();
+  _initDateInputs();
   render();
-  loadLiveData();
+  loadLiveData(true);
 } else {
   render();
   showGate();

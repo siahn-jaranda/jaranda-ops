@@ -333,6 +333,8 @@ def _to_frontend_teacher(
     feedback: dict[str, Any] | None = None,
     teacher_wages: dict[int, dict[str, int]] | None = None,
     subjects: list[dict[str, Any]] | None = None,
+    alimtalk: dict[str, Any] | None = None,
+    active_visit_count: int | None = None,
 ) -> dict[str, Any]:
     """recommendation_teachers row → 프론트 mapTeacher가 기대하는 형태.
 
@@ -395,6 +397,10 @@ def _to_frontend_teacher(
         "recommend_count": int(fb.get("recommend_count") or 0),
         "recommend_rate": fb.get("recommend_rate"),  # None | float (0~100)
         "wage_by_subject": wage_by_subject,
+        "alimtalk_count": int((alimtalk or {}).get("count") or 0),
+        "alimtalk_last_sent_at": (alimtalk or {}).get("last_sent_at").isoformat() if alimtalk and alimtalk.get("last_sent_at") else None,
+        "alimtalk_last_template": (alimtalk or {}).get("last_template") or "",
+        "active_visit_count": int(active_visit_count or 0),
     }
 
 
@@ -407,6 +413,8 @@ def _to_row(
     feedback_map: dict[str, dict[str, Any]] | None = None,
     wage_range_types: list[str] | None = None,
     teacher_wages_map: dict[str, dict[int, dict[str, int]]] | None = None,
+    alimtalk_map: dict[tuple[str, str], dict[str, Any]] | None = None,
+    visit_counts_map: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
@@ -433,6 +441,14 @@ def _to_row(
 
     created_at = rec.get("created_at")
     date_str = created_at.strftime("%m/%d %H:%M") if isinstance(created_at, datetime) else "—"
+    # KST 명시 ISO + 전체 표기 (상세 패널용)
+    if isinstance(created_at, datetime):
+        ca = created_at if created_at.tzinfo else created_at.replace(tzinfo=KST)
+        created_at_iso = ca.isoformat()
+        created_at_full = ca.strftime("%Y-%m-%d %H:%M")
+    else:
+        created_at_iso = None
+        created_at_full = "—"
 
     charge = rec.get("estimated_charge")
     price_str = f"{int(charge):,}원" if charge else "—"
@@ -477,6 +493,8 @@ def _to_row(
         "sid": f"SID-{rec['sid']}",
         "child": child_display,
         "date": date_str,
+        "createdAtIso": created_at_iso,
+        "createdAtFull": created_at_full,
         # 핸드오프 매핑
         "status": status_label,
         "statusKey": status_key,
@@ -523,6 +541,8 @@ def _to_row(
                 (feedback_map or {}).get(t.get("teacher_account_sid")),
                 (teacher_wages_map or {}).get(str(t.get("teacher_account_sid") or "")),
                 subjects,
+                (alimtalk_map or {}).get((str(rec["sid"]), str(t.get("teacher_account_sid") or ""))),
+                (visit_counts_map or {}).get(str(t.get("teacher_account_sid") or "")),
             )
             for t in (teachers or [])
         ],
@@ -531,11 +551,31 @@ def _to_row(
     }
 
 
+_DATE_RE = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_date(name: str, value: str | None) -> str | None:
+    if value is None or value == "":
+        return None
+    if not _DATE_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"{name} must be YYYY-MM-DD")
+    return value
+
+
 @router.get("")
-async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
+async def list_applications(
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=100000),
+    date_from: str | None = Query(None, alias="from"),
+    date_to: str | None = Query(None, alias="to"),
+) -> dict[str, Any]:
+    date_from = _validate_date("from", date_from)
+    date_to = _validate_date("to", date_to)
     replica = get_replica()
     try:
-        rows = await replica.list_recent_recommendations(limit=limit)
+        rows = await replica.list_recent_recommendations(
+            limit=limit, offset=offset, date_from=date_from, date_to=date_to
+        )
         parent_sids = list({r["parent_account_sid"] for r in rows if r.get("parent_account_sid")})
         history_map = await replica.get_parent_history_counts(parent_sids)
         rec_sids = [str(r["sid"]) for r in rows if r.get("sid") is not None]
@@ -562,6 +602,8 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
         teacher_wages_map = await replica.list_teacher_subject_wages(
             teacher_sids, sorted(all_subject_ids)
         )
+        alimtalk_map = await replica.list_alimtalk_to_teachers(rec_sids, teacher_sids)
+        visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
     except Exception:
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
@@ -577,6 +619,8 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
 
     return {
         "count": len(rows),
+        "filter": {"from": date_from, "to": date_to, "limit": limit, "offset": offset},
+        "hasMore": len(rows) >= limit,
         "rows": [
             _to_row(
                 r,
@@ -587,6 +631,8 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
                 feedback_map,
                 wage_range_map.get(str(r.get("sid"))),
                 teacher_wages_map,
+                alimtalk_map,
+                visit_counts_map,
             )
             for r in rows
         ],
@@ -647,6 +693,18 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
 
+    alimtalk_map: dict[tuple[str, str], dict[str, Any]] = {}
+    visit_counts_map: dict[str, int] = {}
+    if teacher_sids:
+        try:
+            alimtalk_map = await replica.list_alimtalk_to_teachers([sid], teacher_sids)
+        except Exception:
+            logger.exception("alimtalk fetch failed sid=%s (graceful)", sid)
+        try:
+            visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
+        except Exception:
+            logger.exception("visit count fetch failed sid=%s (graceful)", sid)
+
     handler: dict[str, Any] | None = None
     if handler_store_available():
         try:
@@ -663,6 +721,8 @@ async def get_application(sid: str) -> dict[str, Any]:
         feedback_map,
         wage_range_types,
         teacher_wages_map,
+        alimtalk_map,
+        visit_counts_map,
     )
 
 
@@ -705,6 +765,18 @@ async def list_teachers(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
 
+    alimtalk_map: dict[tuple[str, str], dict[str, Any]] = {}
+    visit_counts_map: dict[str, int] = {}
+    if teacher_sids:
+        try:
+            alimtalk_map = await replica.list_alimtalk_to_teachers([sid], teacher_sids)
+        except Exception:
+            logger.exception("alimtalk fetch failed sid=%s (graceful)", sid)
+        try:
+            visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
+        except Exception:
+            logger.exception("visit count fetch failed sid=%s (graceful)", sid)
+
     return {
         "sid": sid,
         "teachers": [
@@ -713,6 +785,8 @@ async def list_teachers(sid: str) -> dict[str, Any]:
                 feedback_map.get(r.get("teacher_account_sid")),
                 teacher_wages_map.get(str(r.get("teacher_account_sid") or "")),
                 subjects,
+                alimtalk_map.get((sid, str(r.get("teacher_account_sid") or ""))),
+                visit_counts_map.get(str(r.get("teacher_account_sid") or "")),
             )
             for r in rows
         ],

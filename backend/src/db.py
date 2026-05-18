@@ -27,14 +27,39 @@ class JarandaReplica:
     async def aclose(self) -> None:
         await self._engine.dispose()
 
-    async def list_recent_recommendations(self, limit: int = 30) -> list[dict[str, Any]]:
-        """최근 신청서 목록.
+    async def list_recent_recommendations(
+        self,
+        limit: int = 30,
+        offset: int = 0,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """신청서 목록.
 
-        - 최근 72시간 내 신청서 (status 101 제외)
-        - 페이지 메인 테이블 데이터 소스
+        - date_from/date_to (YYYY-MM-DD, KST) 주면 created_at 기준 [from 00:00, to 23:59:59] 범위.
+          한쪽만 주면 그쪽만 조건으로 사용. 둘 다 없으면 최근 N시간 윈도우(settings).
+        - status 101 (임시저장) 항상 제외
+        - ORDER BY created_at DESC, sid (안정 정렬) — 페이지네이션용
+        - offset/limit 지원 (페이지네이션)
         """
+        where = ["r.status != 101"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if date_from or date_to:
+            if date_from:
+                where.append("r.created_at >= :date_from")
+                params["date_from"] = f"{date_from} 00:00:00"
+            if date_to:
+                # to 일자의 끝(다음날 00:00 미만)까지 포함
+                where.append("r.created_at < :date_to_excl")
+                params["date_to_excl"] = f"{date_to} 23:59:59"
+        else:
+            where.append("r.created_at >= NOW() - INTERVAL :window_hours HOUR")
+            params["window_hours"] = settings.recent_window_hours
+
+        where_sql = " AND ".join(where)
         query = text(
-            """
+            f"""
             SELECT
               r.sid,
               r.parent_account_sid,
@@ -80,17 +105,13 @@ class JarandaReplica:
                 WHERE rt.recommendation_sid = r.sid AND rt.requested = 1
               ) AS requested_count
             FROM recommendation r
-            WHERE r.created_at >= NOW() - INTERVAL :window_hours HOUR
-              AND r.status != 101
-            ORDER BY r.updated_at DESC
-            LIMIT :limit
+            WHERE {where_sql}
+            ORDER BY r.created_at DESC, r.sid DESC
+            LIMIT :limit OFFSET :offset
             """
         )
         async with self._session_factory() as session:
-            result = await session.execute(
-                query,
-                {"window_hours": settings.recent_window_hours, "limit": limit},
-            )
+            result = await session.execute(query, params)
             return [dict(row._mapping) for row in result]
 
     async def get_recommendation(self, sid: str) -> dict[str, Any] | None:
@@ -421,6 +442,79 @@ class JarandaReplica:
                     "teacher_wage": int(m["teacher_wage_amount"] or 0),
                     "parent_charge": int(m["parent_charge_amount"] or 0),
                 }
+        return result
+
+
+    async def list_alimtalk_to_teachers(
+        self, recommendation_sids: list[str], teacher_sids: list[str]
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """(recommendation_sid, teacher_account_sid) → {count, last_sent_at, last_template}.
+
+        recommendation_alimtalk_send_history(rec_sid, history_id) ⇄ alimtalk_send_history.
+        receiver_account_sid가 선생님 sid와 일치하는 row만 집계.
+        """
+        if not recommendation_sids or not teacher_sids:
+            return {}
+        query = text(
+            """
+            SELECT
+              r.recommendation_sid,
+              a.receiver_account_sid AS teacher_account_sid,
+              COUNT(*) AS cnt,
+              MAX(a.sent_at) AS last_sent,
+              SUBSTRING_INDEX(GROUP_CONCAT(a.template_code ORDER BY a.sent_at DESC), ',', 1) AS last_template
+            FROM recommendation_alimtalk_send_history r
+            JOIN alimtalk_send_history a ON a.history_id = r.history_id
+            WHERE r.recommendation_sid IN :rsids
+              AND a.receiver_account_sid IN :tsids
+            GROUP BY r.recommendation_sid, a.receiver_account_sid
+            """
+        ).bindparams(
+            bindparam("rsids", expanding=True),
+            bindparam("tsids", expanding=True),
+        )
+        result: dict[tuple[str, str], dict[str, Any]] = {}
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                query, {"rsids": recommendation_sids, "tsids": teacher_sids}
+            )
+            for row in rows:
+                m = row._mapping
+                key = (str(m["recommendation_sid"]), str(m["teacher_account_sid"]))
+                result[key] = {
+                    "count": int(m["cnt"] or 0),
+                    "last_sent_at": m["last_sent"],
+                    "last_template": (m["last_template"] or "").split(",")[0],
+                }
+        return result
+
+
+    async def list_active_visit_counts(
+        self, teacher_sids: list[str]
+    ) -> dict[str, int]:
+        """선생님별 진행중 정기 수업(visit) 개수. visit.status=10(진행중)만 카운트.
+
+        visit = 정기 계약 단위 (visit_instance = 1회 방문). 운영팀은 정기 계약 수가 더 의미 있음.
+        """
+        if not teacher_sids:
+            return {}
+        query = text(
+            """
+            SELECT matched_teacher_account_sid AS teacher_sid, COUNT(*) AS cnt
+            FROM visit
+            WHERE matched_teacher_account_sid IN :tsids
+              AND status = 10
+            GROUP BY matched_teacher_account_sid
+            """
+        ).bindparams(bindparam("tsids", expanding=True))
+        result: dict[str, int] = {sid: 0 for sid in teacher_sids}
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"tsids": teacher_sids})
+            for row in rows:
+                m = row._mapping
+                tsid = str(m["teacher_sid"])
+                if tsid in result:
+                    result[tsid] = int(m["cnt"] or 0)
         return result
 
 
