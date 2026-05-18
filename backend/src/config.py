@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # 신청서 조회 윈도우 (시간)
     recent_window_hours: int = 72
 
+    # LLM 인사이트 — Anthropic Claude Sonnet 4.6. 키 미설정 시 인사이트 API 비활성.
+    anthropic_api_key: str = ""
+    llm_model_id: str = "claude-sonnet-4-6"
+    llm_max_tokens: int = 512
+    llm_daily_limit: int = 200
+
     @property
     def origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src import auth
 from src.config import settings
-from src.routes import applications, handlers, managed, memos
+from src.routes import applications, handlers, insights, managed, memos
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -46,6 +46,9 @@ app.include_router(handlers.router, dependencies=[Depends(auth.require_auth)])
 
 # 관리 신청서 목록 — 메모 영속화된 신청서 (snapshot 기반)
 app.include_router(managed.router, dependencies=[Depends(auth.require_auth)])
+
+# LLM 인사이트 — POST는 호출당 비용. 라우트 내부에서 일일 한도 가드.
+app.include_router(insights.router, dependencies=[Depends(auth.require_auth)])
 
 
 @app.get("/")

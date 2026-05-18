@@ -1501,6 +1501,16 @@ function renderDetailPanel(app) {
         </div>
       </div>
 
+      <div class="dp-section">
+        <div class="dp-section-head">
+          <div class="section-label">AI 인사이트</div>
+          <div style="font-size:11px;color:#9CA3AF">Claude Sonnet 4.6</div>
+        </div>
+        <div id="ai-insight-area" data-sid="${app.id}">
+          ${renderInsightEmpty(app.id)}
+        </div>
+      </div>
+
     </div>
     <div class="dp-foot">
       <button class="btn btn-secondary" onclick="openMemoModal('${app.id}')">메모</button>
@@ -1551,6 +1561,7 @@ function selectApp(id) {
   }
   state.selectedId = id;
   render();
+  if (id) loadCachedInsight(id);
 }
 function setSort(key) {
   state.sort = key;
@@ -1709,6 +1720,118 @@ async function deleteMemo(memoId) {
     alert('메모 삭제 실패: ' + e.message);
   }
 }
+// ====== AI INSIGHT (신청서 상세 패널) ======
+function renderInsightEmpty(sid) {
+  return `
+    <div style="font-size:12.5px;color:#6B7280;margin-bottom:10px">신청서 컨텍스트와 메모를 LLM으로 분석해 핵심 패턴·제안 액션을 추출합니다.</div>
+    <button class="btn btn-primary" style="width:100%" onclick="runInsight('${sid}', false)">인사이트 생성하기</button>
+  `;
+}
+
+function renderInsightLoading() {
+  return `<div style="padding:14px;text-align:center;color:#6B7280;font-size:13px">생성 중… (5~10초)</div>`;
+}
+
+function renderInsightError(msg, sid) {
+  return `
+    <div style="padding:10px;background:#FFEEEE;color:#A4271A;border-radius:6px;font-size:12.5px;margin-bottom:8px">${escapeHtml(msg)}</div>
+    <button class="btn btn-secondary" style="width:100%" onclick="runInsight('${sid}', false)">다시 시도</button>
+  `;
+}
+
+function renderInsightResult(data) {
+  const summary = data.summary || '';
+  const signals = data.key_signals || [];
+  const actions = data.recommended_actions || [];
+  const risks   = data.risk_flags || [];
+  const cachedTag = data.cached
+    ? `<span style="background:#EAF0FF;color:#1B4FB8;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600">캐시</span>`
+    : `<span style="background:#E4F5EA;color:#1F6B3C;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600">신규</span>`;
+  const tokens = (data.input_tokens || data.output_tokens)
+    ? `· ${data.input_tokens||0} in / ${data.output_tokens||0} out`
+    : '';
+  const generatedAt = data.generated_at ? fmtRelativeTime(data.generated_at) : '방금';
+
+  const bulletList = (items, color) => items.length
+    ? `<ul style="margin:6px 0 0 18px;padding:0;font-size:12.5px;color:${color};line-height:1.6">${items.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul>`
+    : `<div style="color:#9CA3AF;font-size:12px;margin-top:4px">없음</div>`;
+
+  return `
+    <div style="background:#FAFBFC;border:1px solid #EEF1F4;border-radius:8px;padding:12px 14px">
+      ${summary ? `<div style="font-weight:600;color:#1E2530;font-size:13px;line-height:1.5;margin-bottom:10px">${escapeHtml(summary)}</div>` : ''}
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.04em;text-transform:uppercase">핵심 시그널</div>
+        ${bulletList(signals, '#1E2530')}
+      </div>
+      <div style="margin-bottom:${risks.length ? '10px' : '0'}">
+        <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.04em;text-transform:uppercase">제안 액션</div>
+        ${bulletList(actions, '#1B4FB8')}
+      </div>
+      ${risks.length ? `
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#8A5B00;letter-spacing:0.04em;text-transform:uppercase">⚠ 위험 신호</div>
+          ${bulletList(risks, '#8A5B00')}
+        </div>` : ''}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      ${cachedTag}
+      <span style="color:#9CA3AF;font-size:11px;flex:1">${generatedAt} ${tokens}</span>
+      <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px" onclick="runInsight('${escapeHtml(data.sid)}', true)">다시 생성</button>
+    </div>
+  `;
+}
+
+async function loadCachedInsight(sid) {
+  if (!authToken) return;
+  const area = document.getElementById('ai-insight-area');
+  if (!area || area.dataset.sid !== sid) return;
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${sid}/insights`, {
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    if (r.status === 404) return; // 캐시 없음 — 초기 버튼 유지
+    if (!r.ok) return;
+    const data = await r.json();
+    // 패널이 다른 신청서로 바뀌었으면 무시
+    const cur = document.getElementById('ai-insight-area');
+    if (!cur || cur.dataset.sid !== sid) return;
+    cur.innerHTML = renderInsightResult(data);
+  } catch (_) { /* graceful */ }
+}
+
+async function runInsight(sid, force) {
+  if (!authToken) { showGate(); return; }
+  const area = document.getElementById('ai-insight-area');
+  if (!area || area.dataset.sid !== sid) return;
+  area.innerHTML = renderInsightLoading();
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${sid}/insights`, {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify({ force_refresh: !!force }),
+    });
+    const data = await r.json().catch(() => ({}));
+    const cur = document.getElementById('ai-insight-area');
+    if (!cur || cur.dataset.sid !== sid) return;
+    if (r.status === 429) {
+      cur.innerHTML = renderInsightError(data.detail || '일일 한도 초과', sid);
+      return;
+    }
+    if (r.status === 503) {
+      cur.innerHTML = renderInsightError(data.detail || 'LLM 미설정', sid);
+      return;
+    }
+    if (!r.ok) {
+      cur.innerHTML = renderInsightError(data.detail || `호출 실패 (${r.status})`, sid);
+      return;
+    }
+    cur.innerHTML = renderInsightResult(data);
+  } catch (e) {
+    const cur = document.getElementById('ai-insight-area');
+    if (cur && cur.dataset.sid === sid) cur.innerHTML = renderInsightError('네트워크 오류', sid);
+  }
+}
+
 function deriveInsights() {
   const el = document.getElementById('insight-result');
   el.style.padding = '14px';
