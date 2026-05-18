@@ -296,6 +296,23 @@ input, textarea, select { font-family: inherit; }
 .viewed-badge.sm { padding: 2px 6px; font-size: 10.5px; }
 .viewed-yes { background: #E4F5EA; color: #1F6B3C; }
 .viewed-no { background: #FBE0DC; color: #A4271A; }
+.chat-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px; border-radius: 5px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: -0.01em;
+  line-height: 1; white-space: nowrap;
+  background: #EEF2FF; color: #1B4FB8;
+}
+.sched-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px; border-radius: 5px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: -0.01em;
+  line-height: 1; white-space: nowrap;
+}
+.sched-full    { background: #E4F5EA; color: #1F6B3C; }
+.sched-partial { background: #FEF3C7; color: #92400E; }
+.sched-none    { background: #FBE0DC; color: #A4271A; }
+.sched-unknown { background: #F4F6F8; color: #6B7280; }
 .viewed-summary {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 8px; border-radius: 6px;
@@ -977,6 +994,8 @@ function backendToApp(r) {
       alimtalkLastSentAt: t.alimtalk_last_sent_at || null,
       alimtalkLastTemplate: t.alimtalk_last_template || '',
       activeVisitCount: Number(t.active_visit_count || 0),
+      chatEligible: !!t.chat_eligible,
+      scheduleMatch: t.schedule_match || null,
       accepted,
     };
   };
@@ -1567,6 +1586,22 @@ function allTeachersBlock(app) {
     ? `<div class="teachers-rest">${rest.map(t => teacherDetail(teacherLabel(t), t)).join('')}</div>`
     : '';
   return primaryHtml + toggleHtml + restHtml;
+// 요일 약어 매핑 (DayOfWeek → 한글 1글자)
+const _DAY_KOR = {MONDAY:'월',TUESDAY:'화',WEDNESDAY:'수',THURSDAY:'목',FRIDAY:'금',SATURDAY:'토',SUNDAY:'일'};
+function _scheduleBadge(sm) {
+  if (!sm) return '';
+  const reqDays = (sm.requestedDays||[]).map(d => _DAY_KOR[d]||d).join('·');
+  const matchedDays = (sm.matchedDays||[]).map(d => _DAY_KOR[d]||d).join('·');
+  if (sm.status === 'full') {
+    return `<span class="sched-badge sched-full" title="신청 요일(${reqDays}) 전부 가능">⏰ 시간 OK</span>`;
+  }
+  if (sm.status === 'partial') {
+    return `<span class="sched-badge sched-partial" title="신청 요일 ${reqDays} 중 가능: ${matchedDays}">⏰ 일부 (${matchedDays})</span>`;
+  }
+  if (sm.status === 'none') {
+    return `<span class="sched-badge sched-none" title="신청 요일 ${reqDays} 모두 불가">⏰ 요일 불일치</span>`;
+  }
+  return `<span class="sched-badge sched-unknown" title="선생님 가능 시간 미설정">⏰ 시간 미설정</span>`;
 }
 
 function teacherDetail(label, t) {
@@ -1586,6 +1621,8 @@ function teacherDetail(label, t) {
       <div class="row1">
         <span class="lbl">${label}</span>
         ${hasName ? `<span class="viewed-badge sm ${t.viewed?'viewed-yes':'viewed-no'}">${eyeIcon(t.viewed, 10)}${t.viewed?'부모님 열람':'미열람'}</span>` : ''}
+        ${hasName && t.chatEligible ? `<span class="chat-badge sm" title="자란다 정책: 선생님이 수락(accepted)하면 부모님이 채팅 시작 가능 — 실제 채팅방은 Firestore에 별도 저장">💬 채팅 가능</span>` : ''}
+        ${hasName ? _scheduleBadge(t.scheduleMatch) : ''}
       </div>
       <div class="nm ${hasName?'':'empty'}">${hasName ? t.name : '후보 없음'}</div>
       ${hasName && (t.university || t.major) ? `<div class="tc-edu">${escapeHtml(t.university || '')}${t.university && t.major ? ' · ' : ''}${escapeHtml(t.major || '')}</div>` : ''}
