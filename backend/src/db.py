@@ -71,7 +71,8 @@ class JarandaReplica:
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
-                WHERE rt.recommendation_sid = r.sid AND rt.applied = 1
+                WHERE rt.recommendation_sid = r.sid
+                  AND (rt.applied = 1 OR rt.accepted = 1)
               ) AS applied_count,
               (
                 SELECT COUNT(*)
@@ -132,7 +133,8 @@ class JarandaReplica:
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
-                WHERE rt.recommendation_sid = r.sid AND rt.applied = 1
+                WHERE rt.recommendation_sid = r.sid
+                  AND (rt.applied = 1 OR rt.accepted = 1)
               ) AS applied_count,
               (
                 SELECT COUNT(*)
@@ -216,6 +218,7 @@ class JarandaReplica:
             SELECT
               rt.teacher_account_sid,
               rt.applied,
+              rt.accepted,
               rt.requested,
               rt.rejected,
               rt.last_responded_at,
@@ -238,7 +241,7 @@ class JarandaReplica:
              AND tpv.viewed_at >= r.created_at
             WHERE rt.recommendation_sid = :sid
               AND rt.is_deleted = 0
-            ORDER BY rt.applied DESC, rt.last_responded_at ASC
+            ORDER BY (rt.applied OR rt.accepted) DESC, rt.last_responded_at ASC
             """
         )
         async with self._session_factory() as session:
@@ -262,6 +265,7 @@ class JarandaReplica:
               rt.recommendation_sid,
               rt.teacher_account_sid,
               rt.applied,
+              rt.accepted,
               rt.requested,
               rt.rejected,
               rt.last_responded_at,
@@ -284,7 +288,7 @@ class JarandaReplica:
              AND tpv.viewed_at >= r.created_at
             WHERE rt.recommendation_sid IN :sids
               AND rt.is_deleted = 0
-            ORDER BY rt.applied DESC, rt.last_responded_at ASC
+            ORDER BY (rt.applied OR rt.accepted) DESC, rt.last_responded_at ASC
             """
         ).bindparams(bindparam("sids", expanding=True))
 

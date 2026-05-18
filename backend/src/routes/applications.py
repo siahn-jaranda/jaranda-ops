@@ -342,10 +342,15 @@ def _to_frontend_teacher(
     wage_by_subject: 신청서 과목(subject_wage_id) 기준 선생님의 현재 시급.
     """
     applied = bool(r.get("applied"))
+    accepted = bool(r.get("accepted"))
     rejected = bool(r.get("rejected"))
     requested = bool(r.get("requested"))
+    # 자란다 도메인: accepted=추천요청 수락, applied=후속 지원 단계.
+    # applied=1이면 이미 accepted 이상의 진전. 화면에선 진전된 상태를 우선 표기.
     if applied:
-        stat = "응답완료"
+        stat = "지원"
+    elif accepted:
+        stat = "수락"
     elif rejected:
         stat = "거절"
     elif requested:

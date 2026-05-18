@@ -722,6 +722,7 @@ const STATUS_META = {
   cancelled: { label: '취소', tone: 'red' },
 };
 const REC_STATE_META = {
+  applied:   { label: '지원', tone: 'green', dot: '●' },
   accepted:  { label: '수락', tone: 'green', dot: '●' },
   pending:   { label: '응답 대기', tone: 'amber', dot: '◐' },
   waiting:   { label: '응답 대기', tone: 'amber', dot: '◐' },
@@ -874,6 +875,7 @@ function backendToApp(r) {
   const mapTeacher = (t) => {
     if (!t) return { name: '—', stateKey: 'searching', note: '', viewed: false, viewedAt: null, accepted: false };
     const sk = t.stat && t.stat.includes('확정') ? 'accepted'
+            : t.stat && t.stat.includes('지원') ? 'applied'
             : t.stat && t.stat.includes('수락') ? 'accepted'
             : t.stat && t.stat.includes('응답완료') ? 'accepted'
             : t.stat && t.stat.includes('백업') ? 'backup'
@@ -902,8 +904,10 @@ function backendToApp(r) {
       accepted,
     };
   };
-  const responded = teachers.filter(t => t.stat && (t.stat.includes('수락') || t.stat.includes('응답완료')));
-  const recStateKey = responded.length >= 1 ? 'accepted' : (teachers.length ? 'pending' : 'searching');
+  const responded = teachers.filter(t => t.stat && (t.stat.includes('수락') || t.stat.includes('지원') || t.stat.includes('응답완료')));
+  const recStateKey = responded.length >= 1
+    ? (responded.some(t => t.stat.includes('지원')) ? 'applied' : 'accepted')
+    : (teachers.length ? 'pending' : 'searching');
 
   // isNew: backend가 confirmed_count > 0 여부로 계산 (deprecated new_parent 폐기)
   const parentTag = r.isNew === true ? '신규 부모님' : r.isNew === false ? '기존 부모님' : '—';
