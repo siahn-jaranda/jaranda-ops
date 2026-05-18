@@ -67,7 +67,6 @@ class JarandaReplica:
               r.regularity,
               r.cancelled_info,
               r.re_recommend,
-              r.teacher_specialties,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -128,7 +127,6 @@ class JarandaReplica:
               r.regularity,
               r.cancelled_info,
               r.re_recommend,
-              r.teacher_specialties,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -339,14 +337,6 @@ class JarandaReplica:
                 result[sid]["recommend_count"] = rec
                 result[sid]["recommend_rate"] = round(rec / rc * 100, 1) if rc > 0 else None
         return result
-
-
-    async def list_subject_categories(self) -> dict[int, str]:
-        """request_form_category id → name 매핑. enabled 무관(과거 신청서는 disabled id도 가짐)."""
-        query = text("SELECT id, name FROM request_form_category")
-        async with self._session_factory() as session:
-            result = await session.execute(query)
-            return {int(row._mapping["id"]): row._mapping["name"] for row in result}
 
 
 _replica: JarandaReplica | None = None

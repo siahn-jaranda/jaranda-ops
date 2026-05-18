@@ -96,42 +96,6 @@ _REGULARITY_MAP = {1: "1회 수업", 2: "정기", 3: "다회차"}
 # biweekly: kr.jaranda.common.model.enumeration.Biweekly  (1=WEEKLY, 2=BIWEEKLY)
 
 
-# request_form_category 매핑 (id → 한글 이름). 1회 fetch 후 프로세스 생존 동안 캐시.
-# 카테고리 명단은 자주 안 바뀌고, 신청서마다 매번 join 하는 것보다 한 번에 fetch가 단순.
-_subject_cache: dict[int, str] | None = None
-
-
-async def get_subject_map() -> dict[int, str]:
-    global _subject_cache
-    if _subject_cache is None:
-        try:
-            _subject_cache = await get_replica().list_subject_categories()
-        except Exception:
-            logger.exception("subject categories fetch failed (graceful)")
-            _subject_cache = {}
-    return _subject_cache
-
-
-def _parse_subjects(rec: dict[str, Any], subject_map: dict[int, str]) -> list[str]:
-    """teacher_specialties (pipe-delimited category id) → 한글 이름 리스트."""
-    raw = rec.get("teacher_specialties")
-    if not raw:
-        return []
-    names: list[str] = []
-    for token in str(raw).split("|"):
-        token = token.strip()
-        if not token:
-            continue
-        try:
-            cid = int(token)
-        except ValueError:
-            continue
-        name = subject_map.get(cid)
-        if name:
-            names.append(name)
-    return names
-
-
 def _parse_cancelled_reason(raw: Any) -> str:
     """cancelled_info JSON에서 사람이 읽는 reason만 추출. 파싱 실패하면 원문 그대로."""
     if not raw:
@@ -160,7 +124,7 @@ def _region_from_address(addr_raw: Any) -> str:
     return parts[0]
 
 
-def to_snapshot_fields(rec: dict[str, Any], subject_map: dict[int, str]) -> dict[str, Any]:
+def to_snapshot_fields(rec: dict[str, Any]) -> dict[str, Any]:
     """raw recommendation row → matching_ops_application_snapshot 컬럼 매핑.
 
     memos.py가 메모 작성/삭제 시 자란다 replica에서 신청서를 fetch한 후 호출.
@@ -169,14 +133,12 @@ def to_snapshot_fields(rec: dict[str, Any], subject_map: dict[int, str]) -> dict
     status_key, status_label = STATUS_META.get(status_code, ("etc", f"상태{status_code}"))
     confirmed = rec.get("confirmed_at")
     cancelled = rec.get("cancelled_at")
-    subjects = _parse_subjects(rec, subject_map)
     return {
         "child_name": (rec.get("child_name") or "").strip() or None,
         "region": _region_from_address(rec.get("parent_address")) or None,
         "status_key": status_key,
         "status_label": status_label,
-        "subjects": ", ".join(subjects) if subjects else None,
-        "request_chips": _request_chips(rec, subject_map),
+        "request_chips": _request_chips(rec),
         "parent_request": (rec.get("parent_request_to_teacher") or "").strip() or None,
         "matched_teacher": (rec.get("matched_teacher_name") or "").strip() or None,
         "cancelled_reason": _parse_cancelled_reason(rec.get("cancelled_info")) or None,
@@ -190,13 +152,9 @@ def to_snapshot_fields(rec: dict[str, Any], subject_map: dict[int, str]) -> dict
     }
 
 
-def _request_chips(rec: dict[str, Any], subject_map: dict[int, str]) -> list[str]:
-    """카드 보조 정보 칩. 맨 앞은 수업 과목(한글), 그 다음 정기성/매주격주/요일 등."""
+def _request_chips(rec: dict[str, Any]) -> list[str]:
+    """카드 보조 정보 칩. 첫 칩은 정기성, 그 다음 정기수업이면 매주/격주, 이후 부가 조건."""
     chips: list[str] = []
-
-    subjects = _parse_subjects(rec, subject_map)
-    if subjects:
-        chips.append(", ".join(subjects))
 
     reg = rec.get("regularity")
     if reg in _REGULARITY_MAP:
@@ -324,7 +282,6 @@ def _to_frontend_teacher(
 
 def _to_row(
     rec: dict[str, Any],
-    subject_map: dict[int, str],
     parent_history: dict[str, int] | None = None,
     teachers: list[dict[str, Any]] | None = None,
     handler: dict[str, Any] | None = None,
@@ -373,9 +330,8 @@ def _to_row(
         else:
             region = parts[0]
 
-    # 요청사항 칩 (정형 조건) — 첫 칩은 수업 과목
-    chips = _request_chips(rec, subject_map)
-    subjects_list = _parse_subjects(rec, subject_map)
+    # 요청사항 칩 (정형 조건)
+    chips = _request_chips(rec)
 
     # 자유 텍스트 요청
     free_request = (rec.get("parent_request_to_teacher") or "").strip()
@@ -432,7 +388,6 @@ def _to_row(
         "lessonCount": (parent_history or {}).get("lesson_count"),
         "price": price_str,
         "request": free_request,
-        "subjects": subjects_list,
         "requestChips": chips,
         "requestedTeacherName": rec.get("requested_teacher_name") or "",
         "isUrgent": bool(rec.get("is_urgent")),
@@ -471,8 +426,6 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
 
-    subject_map = await get_subject_map()
-
     handler_map: dict[str, dict[str, Any]] = {}
     if handler_store_available():
         try:
@@ -485,7 +438,6 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
         "rows": [
             _to_row(
                 r,
-                subject_map,
                 history_map.get(r.get("parent_account_sid")),
                 teachers_map.get(str(r.get("sid"))),
                 handler_map.get(str(r.get("sid"))),
@@ -538,11 +490,8 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("handler fetch failed sid=%s (graceful)", sid)
 
-    subject_map = await get_subject_map()
-
     return _to_row(
         rec,
-        subject_map,
         history_map.get(parent_sid) if parent_sid else None,
         teachers,
         handler,
