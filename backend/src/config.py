@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     urgent_threshold_min: int = 240  # 4시간
     soon_threshold_min: int = 1440  # 24시간
 
-    # 신청서 조회 윈도우 (시간)
-    recent_window_hours: int = 72
+    # 신청서 조회 윈도우 (시간). 기본 7일.
+    recent_window_hours: int = 168
 
     # LLM 인사이트 — Anthropic Claude Sonnet 4.6. 키 미설정 시 인사이트 API 비활성.
     anthropic_api_key: str = ""

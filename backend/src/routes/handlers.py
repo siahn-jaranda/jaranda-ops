@@ -22,15 +22,23 @@ def _require_store() -> Any:
     return get_handler_store()
 
 
+def _normalize_sid(sid: str) -> str:
+    """client는 'SID-{uuid}' 형태로 호출. PK는 raw uuid로 통일.
+    list_applications도 raw uuid로 handler_map 조회하므로 여기서 정규화 필수.
+    """
+    return sid[4:] if sid.startswith("SID-") else sid
+
+
 @router.post("/{sid}/handler/claim")
 async def claim_handler(
     sid: str = Path(...),
     user: dict = Depends(require_auth_full),
 ) -> dict[str, Any]:
     store = _require_store()
+    raw_sid = _normalize_sid(sid)
     try:
         outcome, row = await store.claim(
-            application_sid=sid,
+            application_sid=raw_sid,
             handler_email=user["email"],
             handler_name=user.get("name") or None,
         )
@@ -53,14 +61,15 @@ async def release_handler(
     user: dict = Depends(require_auth_full),
 ) -> dict[str, Any]:
     store = _require_store()
+    raw_sid = _normalize_sid(sid)
     try:
-        ok = await store.release(application_sid=sid, handler_email=user["email"])
+        ok = await store.release(application_sid=raw_sid, handler_email=user["email"])
     except Exception:
         logger.exception("release_handler failed sid=%s", sid)
         raise HTTPException(status_code=503, detail="handler store query failed")
     if not ok:
         # 본인 아님 또는 row 없음 — 현 상태 조회해서 정확한 응답
-        current = await store.get(sid)
+        current = await store.get(raw_sid)
         if current is None:
             return {"released": False, "reason": "not_claimed"}
         raise HTTPException(
@@ -73,8 +82,9 @@ async def release_handler(
 @router.get("/{sid}/handler")
 async def get_handler(sid: str = Path(...)) -> dict[str, Any]:
     store = _require_store()
+    raw_sid = _normalize_sid(sid)
     try:
-        row = await store.get(sid)
+        row = await store.get(raw_sid)
     except Exception:
         logger.exception("get_handler failed sid=%s", sid)
         raise HTTPException(status_code=503, detail="handler store query failed")

@@ -646,9 +646,12 @@ input, textarea, select { font-family: inherit; }
           <button class="seg-btn" data-sort="urgent" onclick="setSort('urgent')"><span class="icon">⏱</span>취소 임박순</button>
           <button class="seg-btn" data-sort="prob" onclick="setSort('prob')"><span class="icon">📈</span>확률 높은순</button>
         </div>
+        <div class="seg-group" id="responded-seg" title="수락 또는 지원한 선생님이 1명 이상인 신청서만 표시">
+          <button class="seg-btn" id="responded-toggle" onclick="toggleRespondedOnly()"><span class="icon">✓</span>응답 있음</button>
+        </div>
       </div>
       <div class="toolbar-left" style="gap:10px">
-        <div class="date-range" title="신청서 접수일 기준 기간 (KST). 기본은 2026-05-11 이후">
+        <div class="date-range" title="신청서 접수일 기준 기간 (KST). 기본은 최근 7일">
           <label class="lbl">기간</label>
           <input type="date" id="filter-from" onchange="onDateChange()">
           <span class="dash">~</span>
@@ -800,7 +803,15 @@ const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','
 // 3페이지로 넘어가면 2번째 batch fetch — 로딩 부담 분산.
 const PAGE_SIZE = 15;
 const BATCH_SIZE = 30;
-const DEFAULT_FROM = '2026-05-11';
+// 기본 기간: 오늘 - 7일 (KST 가정 — 운영팀은 모두 한국 로컬).
+const DEFAULT_FROM = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() - 7);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+})();
 
 let state = {
   tab: 'matching',
@@ -809,7 +820,7 @@ let state = {
   layout: 'card',
   selectedId: APPS[0]?.id || null,
   search: '',
-  // 신청서 접수일 기간 (YYYY-MM-DD, KST). 비어있으면 backend는 최근 72h, 프론트는 기본값 주입.
+  // 신청서 접수일 기간 (YYYY-MM-DD, KST). 비어있으면 backend는 최근 7일, 프론트는 기본값 주입.
   dateFrom: DEFAULT_FROM,
   dateTo: '',
   // 페이지네이션 상태
@@ -817,6 +828,8 @@ let state = {
   loadedBatches: 0,   // 지금까지 fetch 완료한 batch 수 (각 batch = BATCH_SIZE 건)
   hasMore: true,      // 마지막 batch가 BATCH_SIZE 미만이면 false
   loading: false,
+  // 추가 필터 — 수락/지원 응답이 1명 이상인 신청서만
+  respondedOnly: false,
 };
 
 // 페이지별로 채워진 전체 신청서 누적 (필터별로 재시작)
@@ -1008,6 +1021,10 @@ function backendToApp(r) {
     receivedAtIso: r.createdAtIso || null,
     deadline: r.deadlineLabel || '—',
     deadlineState: r.deadlineState || 'ok',
+    // 정렬 '취소 임박순' 정확도 + 매칭 완료/취소 신청서를 뒤로 보내기 위함.
+    timerMin: (typeof r.timerMin === 'number') ? r.timerMin : null,
+    applyCount: r.applyCount || 0,
+    reqCount: r.reqCount || 0,
     // backend prob: { value: 0~100, source: 'heuristic'|'actual' }. 화면엔 value만 사용
     probability: (r.prob && typeof r.prob === 'object' ? r.prob.value : r.prob) || 0,
     probabilitySource: r.prob && typeof r.prob === 'object' ? r.prob.source : null,
@@ -1321,7 +1338,7 @@ function teacherLineCard(label, t) {
 
 function renderCardView(apps) {
   if (!apps.length) {
-    return `<div class="empty-feed">${authToken ? '최근 72시간 내 매칭 신청서가 없습니다.' : '로그인 후 매칭 신청서가 표시됩니다.'}</div>`;
+    return `<div class="empty-feed">${authToken ? '최근 7일 내 매칭 신청서가 없습니다.' : '로그인 후 매칭 신청서가 표시됩니다.'}</div>`;
   }
   return `<div class="cards">${apps.map(a => `
     <div class="app-card ${state.selectedId===a.id?'selected':''}" onclick="selectApp('${a.id}')">
@@ -1389,19 +1406,19 @@ function handlerRow(a) {
   const h = handlerOf(a);
   if (!h) {
     return `<div class="handler-line none">
-      <span class="lbl">처리 담당</span>
+      <span class="lbl">제품담당</span>
       <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();claimHandler('${a.id}')">내가 담당</button>
     </div>`;
   }
   if (isMyHandler(a)) {
     return `<div class="handler-line mine">
-      <span class="lbl">처리 담당</span>
+      <span class="lbl">제품담당</span>
       <span class="who">나</span>
       <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();releaseHandler('${a.id}')">해제</button>
     </div>`;
   }
   return `<div class="handler-line other">
-    <span class="lbl">처리 담당</span>
+    <span class="lbl">제품담당</span>
     <span class="who">${escapeHtml(handlerDisplayName(h))}</span>
   </div>`;
 }
@@ -1434,7 +1451,7 @@ async function claimHandler(id) {
     if (!r.ok) throw new Error('claim ' + r.status);
     await loadLiveData(true);
   } catch (e) {
-    alert('처리 담당 지정 실패: ' + e.message);
+    alert('제품담당 지정 실패: ' + e.message);
   }
 }
 async function releaseHandler(id) {
@@ -1452,13 +1469,13 @@ async function releaseHandler(id) {
     if (!r.ok) throw new Error('release ' + r.status);
     await loadLiveData(true);
   } catch (e) {
-    alert('처리 담당 해제 실패: ' + e.message);
+    alert('제품담당 해제 실패: ' + e.message);
   }
 }
 
 function renderTableView(apps) {
   if (!apps.length) {
-    return `<div class="empty-feed">${authToken ? '최근 72시간 내 매칭 신청서가 없습니다.' : '로그인 후 매칭 신청서가 표시됩니다.'}</div>`;
+    return `<div class="empty-feed">${authToken ? '최근 7일 내 매칭 신청서가 없습니다.' : '로그인 후 매칭 신청서가 표시됩니다.'}</div>`;
   }
   return `<div class="table-card">
     <div class="table-head">
@@ -1510,18 +1527,21 @@ function _fmtWonShort(n) {
 }
 
 function _wageRangeLine(wr) {
-  // teacher 기준만 우선 표시 — parent 시급은 hover/tooltip 후순위
-  const tMin = wr.teacherMin, tMax = wr.teacherMax;
-  let range;
-  if (tMin == null && tMax == null) range = '—';
-  else if (tMin != null && tMax == null) range = `${_fmtWonShort(tMin)} 이상`;
-  else if (tMin == null && tMax != null) range = `${_fmtWonShort(tMax)} 이하`;
-  else range = `${_fmtWonShort(tMin)} ~ ${_fmtWonShort(tMax)}`;
-  const parentLine = (wr.parentMin != null || wr.parentMax != null)
-    ? ` <span style="color:#9CA3AF">· 부모 ${_fmtWonShort(wr.parentMin)}~${_fmtWonShort(wr.parentMax)}</span>`
+  // 부모님이 선택한 결제 시급 금액을 메인 표기. 라벨의 "친근형/베테랑/레벨 N"
+  // 단계 표현은 운영 화면에 불필요 — 과목군만 남기고 실제 금액 범위로 표기한다.
+  const rawLabel = wr.label || wr.code || '';
+  const labelMain = rawLabel.split(' · ')[0] || rawLabel;
+  const pMin = wr.parentMin, pMax = wr.parentMax;
+  let prange;
+  if (pMin == null && pMax == null) prange = '금액 미상';
+  else if (pMin != null && pMax == null) prange = `${_fmtWonShort(pMin)} 이상`;
+  else if (pMin == null && pMax != null) prange = `${_fmtWonShort(pMax)} 이하`;
+  else prange = `${_fmtWonShort(pMin)} ~ ${_fmtWonShort(pMax)}`;
+  const tLine = (wr.teacherMin != null || wr.teacherMax != null)
+    ? ` <span style="color:#9CA3AF">· 선생님 ${_fmtWonShort(wr.teacherMin)}~${_fmtWonShort(wr.teacherMax)}</span>`
     : '';
-  return `<div class="kv"><span class="k">${escapeHtml(wr.label || wr.code || '')}</span>
-    <span class="v" style="font-variant-numeric:tabular-nums">${range}${parentLine}</span></div>`;
+  return `<div class="kv"><span class="k">${escapeHtml(labelMain)}</span>
+    <span class="v" style="font-variant-numeric:tabular-nums">${prange}${tLine}</span></div>`;
 }
 
 function subjectsWageBlock(app) {
@@ -1686,7 +1706,7 @@ function renderDetailPanel(app) {
         ${isMatched && app.matchedTeacher ? `<div class="kv"><span class="k">매칭된 선생님</span><span class="v" style="font-weight:600">${escapeHtml(app.matchedTeacher)}</span></div>` : ''}
         <div class="kv"><span class="k">접수</span><span class="v" style="color:#4B5563;font-variant-numeric:tabular-nums">${app.receivedAtFull || app.receivedAt}${app.receivedAtIso ? ` <span class="dim">· ${fmtRelativeTime(app.receivedAtIso)}</span>` : ''}</span></div>
         <div class="kv"><span class="k">담당자</span><span class="v">${app.owner}</span></div>
-        <div class="kv"><span class="k">처리 담당</span><span class="v">${handlerInline(app)}</span></div>
+        <div class="kv"><span class="k">제품담당</span><span class="v">${handlerInline(app)}</span></div>
       </div>
 
       <div class="dp-section">
@@ -1742,9 +1762,23 @@ function getApps() {
     const s = state.search.toLowerCase();
     list = list.filter(a => (a.parent||'').includes(state.search) || (a.id||'').toLowerCase().includes(s) || (a.child||'').includes(state.search));
   }
+  if (state.respondedOnly) {
+    // 선생님 1명 이상이 '수락' 또는 '지원' 상태인 신청서만.
+    list = list.filter(a => {
+      if ((a.applyCount || 0) > 0) return true;
+      const all = (a.recommendation && a.recommendation.all) || [];
+      return all.some(t => t.stat && (t.stat.includes('수락') || t.stat.includes('지원')));
+    });
+  }
   if (state.sort === 'urgent') {
-    const order = { urgent: 0, soon: 1, ok: 2 };
-    list.sort((a,b) => (order[a.deadlineState]??9) - (order[b.deadlineState]??9));
+    // 취소 임박순: timerMin이 작은 것부터(임박). 매칭완료/취소된 건은 뒤로.
+    // timerMin이 null인 케이스(마감 정보 없거나 이미 지남)도 뒤로.
+    const score = a => {
+      if (a.statusKey === 'matched' || a.statusKey === 'cancelled') return 1e12;
+      if (typeof a.timerMin !== 'number') return 1e11;
+      return a.timerMin;
+    };
+    list.sort((a,b) => score(a) - score(b));
   } else if (state.sort === 'prob') {
     list.sort((a,b) => b.probability - a.probability);
   } else {
@@ -1796,16 +1830,39 @@ function selectApp(id) {
   render();
   if (id) loadCachedInsight(id);
 }
-function setSort(key) {
+async function setSort(key) {
   state.sort = key;
   state.page = 1;
   document.querySelectorAll('#sort-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === key));
   render();
+  // 임박순/확률순은 전체 데이터가 있어야 정확. 백그라운드로 끝까지 fetch.
+  if (key === 'urgent' || key === 'prob') {
+    while (state.hasMore && !state.loading) {
+      const ok = await _fetchNextBatch();
+      if (!ok) break;
+    }
+    render();
+  }
 }
 function setLayout(key) {
   state.layout = key;
   document.querySelectorAll('#layout-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.layout === key));
   render();
+}
+async function toggleRespondedOnly() {
+  state.respondedOnly = !state.respondedOnly;
+  state.page = 1;
+  const btn = document.getElementById('responded-toggle');
+  if (btn) btn.classList.toggle('active', state.respondedOnly);
+  render();
+  // 응답 있는 신청서 수를 정확히 보려면 전체 batch가 필요하다 — 백그라운드 fetch.
+  if (state.respondedOnly) {
+    while (state.hasMore && !state.loading) {
+      const ok = await _fetchNextBatch();
+      if (!ok) break;
+    }
+    render();
+  }
 }
 function onSearch(v) { state.search = v.trim(); state.page = 1; render(); }
 
