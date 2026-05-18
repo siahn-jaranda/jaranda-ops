@@ -424,6 +424,42 @@ class JarandaReplica:
         return result
 
 
+    async def list_teacher_weekly_availability(
+        self, teacher_sids: list[str]
+    ) -> dict[str, set[str]]:
+        """선생님별 가능 요일 집합 (DayOfWeek 영문 대문자).
+
+        schedule 테이블의 mon~sun 비트마스크 != 0 인 요일을 가능으로 판단.
+        비트마스크 30bit 정밀 시간 해석은 v2 — 일단 요일 단위 매칭만.
+        """
+        if not teacher_sids:
+            return {}
+        query = text(
+            """
+            SELECT account_sid, mon, tue, wed, thu, fri, sat, sun
+            FROM schedule
+            WHERE account_sid IN :tsids
+            """
+        ).bindparams(bindparam("tsids", expanding=True))
+        result: dict[str, set[str]] = {sid: set() for sid in teacher_sids}
+        cols = (
+            ("mon", "MONDAY"), ("tue", "TUESDAY"), ("wed", "WEDNESDAY"),
+            ("thu", "THURSDAY"), ("fri", "FRIDAY"),
+            ("sat", "SATURDAY"), ("sun", "SUNDAY"),
+        )
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"tsids": teacher_sids})
+            for row in rows:
+                m = row._mapping
+                tsid = str(m["account_sid"])
+                if tsid not in result:
+                    continue
+                for col, name in cols:
+                    if int(m[col] or 0) != 0:
+                        result[tsid].add(name)
+        return result
+
+
 _replica: JarandaReplica | None = None
 
 

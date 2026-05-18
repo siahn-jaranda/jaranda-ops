@@ -328,11 +328,52 @@ def _compute_prob(
     return {"value": max(5, min(100, score)), "source": "heuristic"}
 
 
+def _parse_requested_days(rec: dict[str, Any]) -> list[str]:
+    """recommendation.schedule JSON에서 possible_day_of_weeks 추출 (DayOfWeek 영문 대문자)."""
+    raw = rec.get("schedule")
+    if not raw:
+        return []
+    try:
+        data = raw if isinstance(raw, dict) else json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    days = data.get("possible_day_of_weeks") or []
+    if not isinstance(days, list):
+        return []
+    return [str(d).upper() for d in days if d]
+
+
+def _schedule_match(requested_days: list[str], available_days: set[str] | None) -> dict[str, Any] | None:
+    """신청 요일 vs 선생님 가능 요일 일치 — 요일 단위(시간대 정밀도는 v2).
+
+    상태: 'full'(전부 가능), 'partial'(일부), 'none'(불가), 'unknown'(정보 없음).
+    """
+    if not requested_days:
+        return None
+    if available_days is None:
+        # schedule row 자체가 없는 선생님 — 가능 시간 미설정. v1은 'unknown'.
+        return {"status": "unknown", "requestedDays": requested_days, "availableDays": [], "matchedDays": []}
+    matched = [d for d in requested_days if d in available_days]
+    if not matched:
+        status = "none"
+    elif len(matched) == len(requested_days):
+        status = "full"
+    else:
+        status = "partial"
+    return {
+        "status": status,
+        "requestedDays": requested_days,
+        "availableDays": sorted(available_days),
+        "matchedDays": matched,
+    }
+
+
 def _to_frontend_teacher(
     r: dict[str, Any],
     feedback: dict[str, Any] | None = None,
     teacher_wages: dict[int, dict[str, int]] | None = None,
     subjects: list[dict[str, Any]] | None = None,
+    schedule_match: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """recommendation_teachers row → 프론트 mapTeacher가 기대하는 형태.
 
@@ -395,6 +436,11 @@ def _to_frontend_teacher(
         "recommend_count": int(fb.get("recommend_count") or 0),
         "recommend_rate": fb.get("recommend_rate"),  # None | float (0~100)
         "wage_by_subject": wage_by_subject,
+        # 부모님 ↔ 선생님 채팅 자격: 자란다 정책상 recommendation_teachers.accepted=1 이면
+        # 부모님이 채팅을 시작할 수 있음 (실제 채팅방은 Firestore에 별도 저장).
+        # applied=1 은 accepted를 함의 (지원하려면 먼저 수락 필요).
+        "chat_eligible": applied or accepted,
+        "schedule_match": schedule_match,  # None | {status, requestedDays, availableDays, matchedDays}
     }
 
 
@@ -407,6 +453,7 @@ def _to_row(
     feedback_map: dict[str, dict[str, Any]] | None = None,
     wage_range_types: list[str] | None = None,
     teacher_wages_map: dict[str, dict[int, dict[str, int]]] | None = None,
+    teacher_availability_map: dict[str, set[str]] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
@@ -447,6 +494,9 @@ def _to_row(
     # 과목 + 시급 범위
     subjects = _parse_subjects(rec, subject_map)
     wage_ranges = _wage_range_objects(wage_range_types)
+
+    # 신청 요일 (시간 매칭용)
+    requested_days = _parse_requested_days(rec)
 
     # 요청사항 칩 (정형 조건) — 첫 칩은 수업 과목
     chips = _request_chips(rec, subjects)
@@ -523,6 +573,10 @@ def _to_row(
                 (feedback_map or {}).get(t.get("teacher_account_sid")),
                 (teacher_wages_map or {}).get(str(t.get("teacher_account_sid") or "")),
                 subjects,
+                _schedule_match(
+                    requested_days,
+                    (teacher_availability_map or {}).get(str(t.get("teacher_account_sid") or "")),
+                ),
             )
             for t in (teachers or [])
         ],
@@ -562,6 +616,7 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
         teacher_wages_map = await replica.list_teacher_subject_wages(
             teacher_sids, sorted(all_subject_ids)
         )
+        teacher_availability_map = await replica.list_teacher_weekly_availability(teacher_sids)
     except Exception:
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
@@ -587,6 +642,7 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
                 feedback_map,
                 wage_range_map.get(str(r.get("sid"))),
                 teacher_wages_map,
+                teacher_availability_map,
             )
             for r in rows
         ],
@@ -647,6 +703,13 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
 
+    teacher_availability_map: dict[str, set[str]] = {}
+    if teacher_sids:
+        try:
+            teacher_availability_map = await replica.list_teacher_weekly_availability(teacher_sids)
+        except Exception:
+            logger.exception("teacher availability fetch failed sid=%s (graceful)", sid)
+
     handler: dict[str, Any] | None = None
     if handler_store_available():
         try:
@@ -663,6 +726,7 @@ async def get_application(sid: str) -> dict[str, Any]:
         feedback_map,
         wage_range_types,
         teacher_wages_map,
+        teacher_availability_map,
     )
 
 
@@ -705,6 +769,14 @@ async def list_teachers(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
 
+    teacher_availability_map: dict[str, set[str]] = {}
+    if teacher_sids:
+        try:
+            teacher_availability_map = await replica.list_teacher_weekly_availability(teacher_sids)
+        except Exception:
+            logger.exception("teacher availability fetch failed sid=%s (graceful)", sid)
+    requested_days = _parse_requested_days(rec) if rec else []
+
     return {
         "sid": sid,
         "teachers": [
@@ -713,6 +785,10 @@ async def list_teachers(sid: str) -> dict[str, Any]:
                 feedback_map.get(r.get("teacher_account_sid")),
                 teacher_wages_map.get(str(r.get("teacher_account_sid") or "")),
                 subjects,
+                _schedule_match(
+                    requested_days,
+                    teacher_availability_map.get(str(r.get("teacher_account_sid") or "")),
+                ),
             )
             for r in rows
         ],
