@@ -370,6 +370,17 @@ input, textarea, select { font-family: inherit; }
 .teacher-card .tc-stat .lbl { font-size: 10px; color: #6B7280; letter-spacing: .02em; }
 .teacher-card .tc-stat .val { font-size: 12.5px; color: #1E2530; font-weight: 700; margin-top: 2px; line-height: 1.25; }
 .teacher-card .tc-stat .sub { font-size: 10px; color: #9CA3AF; font-weight: 500; }
+.teacher-card .tc-wages {
+  margin-top: 8px; display: flex; flex-direction: column; gap: 4px;
+  border-top: 1px dashed #EEF1F4; padding-top: 8px;
+}
+.teacher-card .tc-wage-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.teacher-card .tc-wage-subj { color: #4B5563; font-weight: 600; }
+.teacher-card .tc-wage-amt { color: #1E2530; font-weight: 700; }
+.teacher-card .tc-wage-amt .dim { color: #9CA3AF; font-weight: 500; margin-left: 4px; }
 .teacher-card .body { flex: 1; min-width: 0; }
 .teacher-card .row1 { display: flex; align-items: center; gap: 6px; }
 .teacher-card .row1 .lbl { font-size: 11px; font-weight: 700; color: #6B7280; letter-spacing: 0.04em; }
@@ -887,6 +898,7 @@ function backendToApp(r) {
       recommendRate: t.recommend_rate,
       university: t.university || '',
       major: t.major || '',
+      wageBySubject: Array.isArray(t.wage_by_subject) ? t.wage_by_subject : [],
       accepted,
     };
   };
@@ -921,6 +933,8 @@ function backendToApp(r) {
       prevLessons: r.lessonCount != null ? r.lessonCount : 0,
     },
     extras: r.requestChips || [],
+    subjects: r.subjects || [],
+    wageRanges: r.wageRanges || [],
     result: r.result === '성공' ? '성공' : r.result === '실패' ? '실패' : null,
     // 상세 패널 추가 노출 필드
     request: r.request || '',
@@ -1000,6 +1014,8 @@ function snapshotToApp(s) {
     recommendation: { stateKey: 'searching', t1: {name:'—',stateKey:'searching',viewed:false}, t2: {name:'—',stateKey:'searching',viewed:false} },
     history: { rebook: false, prevMatches: 0, prevLessons: 0 },
     extras: s.requestChips || [],
+    subjects: s.subjects || [],
+    wageRanges: s.wageRanges || [],
     result: null,
     request: s.parentRequest || '',
     matchedTeacher: s.matchedTeacher || '',
@@ -1307,6 +1323,45 @@ function _fmtHours(h) {
   return (Math.round(n * 10) / 10) + 'h';
 }
 
+// 천원 단위(15000 → "1.5만원")로 간단 포맷. 무한대(MAX_COST=100000)는 null로 처리됨.
+function _fmtWonShort(n) {
+  if (n === null || n === undefined) return '제한 없음';
+  const v = Number(n);
+  if (!isFinite(v)) return '제한 없음';
+  if (v >= 10000) {
+    const man = v / 10000;
+    return (Math.round(man * 10) / 10).toLocaleString() + '만원';
+  }
+  return v.toLocaleString() + '원';
+}
+
+function _wageRangeLine(wr) {
+  // teacher 기준만 우선 표시 — parent 시급은 hover/tooltip 후순위
+  const tMin = wr.teacherMin, tMax = wr.teacherMax;
+  let range;
+  if (tMin == null && tMax == null) range = '—';
+  else if (tMin != null && tMax == null) range = `${_fmtWonShort(tMin)} 이상`;
+  else if (tMin == null && tMax != null) range = `${_fmtWonShort(tMax)} 이하`;
+  else range = `${_fmtWonShort(tMin)} ~ ${_fmtWonShort(tMax)}`;
+  const parentLine = (wr.parentMin != null || wr.parentMax != null)
+    ? ` <span style="color:#9CA3AF">· 부모 ${_fmtWonShort(wr.parentMin)}~${_fmtWonShort(wr.parentMax)}</span>`
+    : '';
+  return `<div class="kv"><span class="k">${escapeHtml(wr.label || wr.code || '')}</span>
+    <span class="v" style="font-variant-numeric:tabular-nums">${range}${parentLine}</span></div>`;
+}
+
+function subjectsWageBlock(app) {
+  const subjects = app.subjects || [];
+  const wrs = app.wageRanges || [];
+  const subjLine = subjects.length
+    ? `<div class="chip-list" style="margin-bottom:8px">${subjects.map(s => `<span class="chip" style="background:#EEF2FF;color:#3730A3;font-weight:600">${escapeHtml(s.name)}</span>`).join('')}</div>`
+    : `<div style="color:#9CA3AF;font-size:12px;margin-bottom:8px">과목 정보 없음</div>`;
+  const wageLine = wrs.length
+    ? wrs.map(_wageRangeLine).join('')
+    : `<div class="kv"><span class="k">희망 시급</span><span class="v" style="color:#9CA3AF">미지정</span></div>`;
+  return subjLine + wageLine;
+}
+
 function teacherDetail(label, t) {
   const meta = REC_STATE_META[t.stateKey] || REC_STATE_META.pending;
   const hasName = t.name && t.name !== '—';
@@ -1350,6 +1405,11 @@ function teacherDetail(label, t) {
           <div class="val">${Number(t.reviewCount||0)}건</div>
         </div>
       </div>` : ''}
+      ${(t.wageBySubject && t.wageBySubject.length) ? `<div class="tc-wages">${t.wageBySubject.map(w => `
+        <div class="tc-wage-row">
+          <span class="tc-wage-subj">${escapeHtml(w.subjectName)}</span>
+          <span class="tc-wage-amt">${_fmtWonShort(w.teacherWage)}<span class="dim"> · 부모 ${_fmtWonShort(w.parentCharge)}</span></span>
+        </div>`).join('')}</div>` : ''}
     </div>
     <div class="state-tag tone-${meta.tone}">${meta.label}</div>
   </div>`;
@@ -1422,6 +1482,11 @@ function renderDetailPanel(app) {
         <div class="kv"><span class="k">이전 수업</span><span class="v">${app.history.prevLessons ?? 0}회</span></div>
         <div class="kv"><span class="k">지역</span><span class="v">${app.region || '—'}</span></div>
         <div class="kv"><span class="k">연락처</span><span class="v" style="font-variant-numeric:tabular-nums">${app.parentMobile || '—'}</span></div>
+      </div>
+
+      <div class="dp-section">
+        <div class="section-label">수업 과목 · 희망 시급</div>
+        ${subjectsWageBlock(app)}
       </div>
 
       <div class="dp-section">

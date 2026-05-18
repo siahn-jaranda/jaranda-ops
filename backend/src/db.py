@@ -67,6 +67,7 @@ class JarandaReplica:
               r.regularity,
               r.cancelled_info,
               r.re_recommend,
+              r.teacher_specialties,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -127,6 +128,7 @@ class JarandaReplica:
               r.regularity,
               r.cancelled_info,
               r.re_recommend,
+              r.teacher_specialties,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -336,6 +338,85 @@ class JarandaReplica:
                 result[sid]["review_count"] = rc
                 result[sid]["recommend_count"] = rec
                 result[sid]["recommend_rate"] = round(rec / rc * 100, 1) if rc > 0 else None
+        return result
+
+
+    async def list_subject_wages(self) -> dict[int, str]:
+        """jrdtbl_subject_wage id → name. recommendation.teacher_specialties(1~6)와 매핑.
+
+        (1=돌봄, 2=수학/과학, 3=운동, 4=예능, 5=외국어, 6=한글/국어)
+        request_form_category(1~27)와는 다른 차원 — 시급 기준 큰 과목군.
+        """
+        query = text("SELECT id, name FROM jrdtbl_subject_wage")
+        async with self._session_factory() as session:
+            result = await session.execute(query)
+            return {int(row._mapping["id"]): row._mapping["name"] for row in result}
+
+    async def list_wage_ranges(self, sids: list[str]) -> dict[str, list[str]]:
+        """신청서 sid → 부모님이 선택한 wage_range_type 코드 리스트 (DesiredCost enum).
+
+        한 신청서가 여러 범위를 가질 수 있어 list로 반환. is_deleted=0만.
+        """
+        if not sids:
+            return {}
+        query = text(
+            """
+            SELECT recommendation_sid, wage_range_type
+            FROM recommendation_teacher_wage_range
+            WHERE recommendation_sid IN :sids
+              AND is_deleted = 0
+            ORDER BY recommendation_sid, recommendation_teacher_wage_range_id
+            """
+        ).bindparams(bindparam("sids", expanding=True))
+        result: dict[str, list[str]] = {sid: [] for sid in sids}
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"sids": sids})
+            for row in rows:
+                m = row._mapping
+                sid = str(m["recommendation_sid"])
+                t = str(m["wage_range_type"])
+                if sid in result and t not in result[sid]:
+                    result[sid].append(t)
+        return result
+
+    async def list_teacher_subject_wages(
+        self, teacher_sids: list[str], subject_wage_ids: list[int]
+    ) -> dict[str, dict[int, dict[str, int]]]:
+        """(teacher_sid → {subject_wage_id → {teacher_wage, parent_charge}}).
+
+        jrdtbl_subject_teacher_wage_info에서 선생님별 과목별 현재 시급 조회.
+        """
+        if not teacher_sids or not subject_wage_ids:
+            return {}
+        query = text(
+            """
+            SELECT
+              teacher_account_sid,
+              subject_wage_id,
+              teacher_wage_amount,
+              parent_charge_amount
+            FROM jrdtbl_subject_teacher_wage_info
+            WHERE teacher_account_sid IN :tsids
+              AND subject_wage_id IN :wids
+            """
+        ).bindparams(
+            bindparam("tsids", expanding=True),
+            bindparam("wids", expanding=True),
+        )
+        result: dict[str, dict[int, dict[str, int]]] = {sid: {} for sid in teacher_sids}
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                query, {"tsids": teacher_sids, "wids": subject_wage_ids}
+            )
+            for row in rows:
+                m = row._mapping
+                tsid = str(m["teacher_account_sid"])
+                if tsid not in result:
+                    continue
+                result[tsid][int(m["subject_wage_id"])] = {
+                    "teacher_wage": int(m["teacher_wage_amount"] or 0),
+                    "parent_charge": int(m["parent_charge_amount"] or 0),
+                }
         return result
 
 
