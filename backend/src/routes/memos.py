@@ -43,12 +43,15 @@ async def _refresh_snapshot(sid: str) -> None:
     if not snapshot_store_available():
         return
     try:
-        from src.routes.applications import to_snapshot_fields
-        rec = await get_replica().get_recommendation(sid)
+        from src.routes.applications import get_subject_map, to_snapshot_fields
+        replica = get_replica()
+        rec = await replica.get_recommendation(sid)
         if rec is None:
             logger.warning("snapshot refresh skipped — recommendation %s not in replica", sid)
             return
-        fields = to_snapshot_fields(rec)
+        subject_map = await get_subject_map()
+        wage_types = (await replica.list_wage_ranges([sid])).get(sid, [])
+        fields = to_snapshot_fields(rec, subject_map, wage_types)
         await get_snapshot_store().upsert(sid, fields)
     except Exception:
         logger.exception("snapshot upsert failed sid=%s (graceful)", sid)

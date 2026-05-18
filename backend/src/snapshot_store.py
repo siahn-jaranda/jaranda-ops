@@ -12,6 +12,8 @@ status=100(삭제)된 신청서도 운영팀의 "관리 신청서 목록"에 계
       region              VARCHAR(100),
       status_key          VARCHAR(20),
       status_label        VARCHAR(20),
+      subjects            JSONB,
+      wage_ranges         JSONB,
       request_chips       JSONB,
       parent_request      TEXT,
       matched_teacher     VARCHAR(70),
@@ -48,6 +50,8 @@ SNAPSHOT_FIELDS = (
     "region",
     "status_key",
     "status_label",
+    "subjects",
+    "wage_ranges",
     "request_chips",
     "parent_request",
     "matched_teacher",
@@ -81,11 +85,11 @@ class SnapshotStore:
     async def upsert(self, application_sid: str, fields: dict[str, Any]) -> None:
         """INSERT … ON CONFLICT UPDATE. fields는 SNAPSHOT_FIELDS만 사용."""
         cleaned = {k: fields.get(k) for k in SNAPSHOT_FIELDS}
-        # JSONB 컬럼은 json.dumps로 직렬화
-        if cleaned.get("request_chips") is not None and not isinstance(
-            cleaned["request_chips"], str
-        ):
-            cleaned["request_chips"] = json.dumps(cleaned["request_chips"])
+        # JSONB 컬럼은 json.dumps로 직렬화 — 이미 str이면 그대로 (to_snapshot_fields가 dump 함)
+        for jcol in ("request_chips", "subjects", "wage_ranges"):
+            v = cleaned.get(jcol)
+            if v is not None and not isinstance(v, str):
+                cleaned[jcol] = json.dumps(v, ensure_ascii=False)
 
         col_list = ", ".join(SNAPSHOT_FIELDS)
         param_list = ", ".join(f":{c}" for c in SNAPSHOT_FIELDS)
@@ -127,6 +131,7 @@ class SnapshotStore:
             SELECT
               s.application_sid,
               s.child_name, s.region, s.status_key, s.status_label,
+              s.subjects, s.wage_ranges,
               s.request_chips, s.parent_request, s.matched_teacher,
               s.cancelled_reason, s.is_urgent, s.auto_confirm, s.re_recommend,
               s.app_created_at, s.app_deadline_at,
@@ -167,14 +172,22 @@ class SnapshotStore:
             return int(row._mapping["cnt"]) if row else 0
 
 
+def _maybe_json(value: Any, default: Any) -> Any:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return default
+    return value
+
+
 def _row_to_dict(row: Any) -> dict[str, Any]:
     m = row._mapping
-    chips = m["request_chips"]
-    if isinstance(chips, str):
-        try:
-            chips = json.loads(chips)
-        except (ValueError, TypeError):
-            chips = []
+    chips = _maybe_json(m.get("request_chips"), [])
+    subjects = _maybe_json(m.get("subjects"), [])
+    wage_ranges = _maybe_json(m.get("wage_ranges"), [])
     handler = None
     if m.get("handler_email"):
         claimed: datetime | None = m.get("handler_claimed_at")
@@ -189,6 +202,8 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "region": m.get("region") or "",
         "statusKey": m.get("status_key"),
         "status": m.get("status_label"),
+        "subjects": subjects or [],
+        "wageRanges": wage_ranges or [],
         "requestChips": chips or [],
         "parentRequest": m.get("parent_request") or "",
         "matchedTeacher": m.get("matched_teacher") or "",

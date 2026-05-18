@@ -96,6 +96,90 @@ _REGULARITY_MAP = {1: "1회 수업", 2: "정기", 3: "다회차"}
 # biweekly: kr.jaranda.common.model.enumeration.Biweekly  (1=WEEKLY, 2=BIWEEKLY)
 
 
+# kr.jaranda.domain.requestform.desiredcost.DesiredCost — recommendation_teacher_wage_range.wage_range_type
+# (label, teacher_min, teacher_max, parent_min, parent_max). MAX=100000은 사실상 상한 없음.
+# DB에는 enum 외 deprecated 코드(STUDY_VETERAN, STUDY_PREMIUM, CARE_LEVEL_n)도 존재 — _DESIRED_COST_EXTRA 로 보강.
+_DESIRED_COST_MAP: dict[str, dict[str, Any]] = {
+    "NONE":                     {"label": "선호 없음",         "teacher_min": 0,     "teacher_max": None, "parent_min": 0,     "parent_max": None},
+    "ALL_WAGE":                 {"label": "전체",              "teacher_min": 0,     "teacher_max": None, "parent_min": 0,     "parent_max": None},
+    "CARE_FRIENDLY":            {"label": "돌봄 · 친근형",     "teacher_min": 0,     "teacher_max": 16000, "parent_min": 0,     "parent_max": 20000},
+    "CARE_VETERAN":             {"label": "돌봄 · 베테랑",     "teacher_min": 16000, "teacher_max": None, "parent_min": 20000, "parent_max": None},
+    "STUDY_FRIENDLY":           {"label": "학습 · 친근형",     "teacher_min": 0,     "teacher_max": 19000, "parent_min": 0,     "parent_max": 25000},
+    "STUDY_HIGHLY_EXPERIENCED": {"label": "학습 · 경력 다수",  "teacher_min": 19000, "teacher_max": 29000, "parent_min": 25000, "parent_max": 35000},
+    "STUDY_VETERAN":            {"label": "학습 · 베테랑",     "teacher_min": 29000, "teacher_max": None, "parent_min": 35000, "parent_max": None},
+    # 아래는 운영 데이터에 남아있는 과거 코드 — 정확한 범위는 enum에 없어 라벨만 노출.
+    "STUDY_PREMIUM":            {"label": "학습 · 프리미엄(과거)", "teacher_min": None, "teacher_max": None, "parent_min": None, "parent_max": None},
+    "STUDY_MODERATE":           {"label": "학습 · 일반(과거)",   "teacher_min": None, "teacher_max": None, "parent_min": None, "parent_max": None},
+    "STUDY_EXPERIENCED":        {"label": "학습 · 경험(과거)",   "teacher_min": None, "teacher_max": None, "parent_min": None, "parent_max": None},
+    "CARE_LEVEL_1":             {"label": "돌봄 · 레벨 1(과거)", "teacher_min": None, "teacher_max": None, "parent_min": None, "parent_max": None},
+    "CARE_LEVEL_2":             {"label": "돌봄 · 레벨 2(과거)", "teacher_min": None, "teacher_max": None, "parent_min": None, "parent_max": None},
+    "CARE_LEVEL_3":             {"label": "돌봄 · 레벨 3(과거)", "teacher_min": None, "teacher_max": None, "parent_min": None, "parent_max": None},
+    "CARE_LEVEL_4":             {"label": "돌봄 · 레벨 4(과거)", "teacher_min": None, "teacher_max": None, "parent_min": None, "parent_max": None},
+}
+
+
+# request_form_category와는 다른 차원의 시급 기준 과목군 (jrdtbl_subject_wage, 1~6).
+# 프로세스 생존 동안 1회 fetch 후 캐시 — 매번 join 안 함.
+_subject_cache: dict[int, str] | None = None
+
+
+async def get_subject_map() -> dict[int, str]:
+    global _subject_cache
+    if _subject_cache is None:
+        try:
+            _subject_cache = await get_replica().list_subject_wages()
+        except Exception:
+            logger.exception("subject wages fetch failed (graceful)")
+            _subject_cache = {}
+    return _subject_cache
+
+
+def _parse_subjects(rec: dict[str, Any], subject_map: dict[int, str]) -> list[dict[str, Any]]:
+    """teacher_specialties (pipe-delimited subject_wage id) → [{id, name}] 리스트."""
+    raw = rec.get("teacher_specialties")
+    if not raw:
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for token in str(raw).split("|"):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            sid = int(token)
+        except ValueError:
+            continue
+        if sid in seen:
+            continue
+        name = subject_map.get(sid)
+        if not name:
+            continue
+        seen.add(sid)
+        out.append({"id": sid, "name": name})
+    return out
+
+
+def _wage_range_objects(types: list[str] | None) -> list[dict[str, Any]]:
+    """DesiredCost 코드 리스트 → 프론트 노출용 객체 리스트."""
+    if not types:
+        return []
+    out: list[dict[str, Any]] = []
+    for t in types:
+        meta = _DESIRED_COST_MAP.get(t)
+        if not meta:
+            out.append({"code": t, "label": t, "teacherMin": None, "teacherMax": None, "parentMin": None, "parentMax": None})
+            continue
+        out.append({
+            "code": t,
+            "label": meta["label"],
+            "teacherMin": meta["teacher_min"],
+            "teacherMax": meta["teacher_max"],
+            "parentMin": meta["parent_min"],
+            "parentMax": meta["parent_max"],
+        })
+    return out
+
+
 def _parse_cancelled_reason(raw: Any) -> str:
     """cancelled_info JSON에서 사람이 읽는 reason만 추출. 파싱 실패하면 원문 그대로."""
     if not raw:
@@ -124,7 +208,11 @@ def _region_from_address(addr_raw: Any) -> str:
     return parts[0]
 
 
-def to_snapshot_fields(rec: dict[str, Any]) -> dict[str, Any]:
+def to_snapshot_fields(
+    rec: dict[str, Any],
+    subject_map: dict[int, str],
+    wage_range_types: list[str] | None = None,
+) -> dict[str, Any]:
     """raw recommendation row → matching_ops_application_snapshot 컬럼 매핑.
 
     memos.py가 메모 작성/삭제 시 자란다 replica에서 신청서를 fetch한 후 호출.
@@ -133,12 +221,16 @@ def to_snapshot_fields(rec: dict[str, Any]) -> dict[str, Any]:
     status_key, status_label = STATUS_META.get(status_code, ("etc", f"상태{status_code}"))
     confirmed = rec.get("confirmed_at")
     cancelled = rec.get("cancelled_at")
+    subjects = _parse_subjects(rec, subject_map)
+    wage_ranges = _wage_range_objects(wage_range_types)
     return {
         "child_name": (rec.get("child_name") or "").strip() or None,
         "region": _region_from_address(rec.get("parent_address")) or None,
         "status_key": status_key,
         "status_label": status_label,
-        "request_chips": _request_chips(rec),
+        "subjects": json.dumps(subjects, ensure_ascii=False) if subjects else None,
+        "wage_ranges": json.dumps(wage_ranges, ensure_ascii=False) if wage_ranges else None,
+        "request_chips": _request_chips(rec, subjects),
         "parent_request": (rec.get("parent_request_to_teacher") or "").strip() or None,
         "matched_teacher": (rec.get("matched_teacher_name") or "").strip() or None,
         "cancelled_reason": _parse_cancelled_reason(rec.get("cancelled_info")) or None,
@@ -152,9 +244,12 @@ def to_snapshot_fields(rec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _request_chips(rec: dict[str, Any]) -> list[str]:
-    """카드 보조 정보 칩. 첫 칩은 정기성, 그 다음 정기수업이면 매주/격주, 이후 부가 조건."""
+def _request_chips(rec: dict[str, Any], subjects: list[dict[str, Any]] | None = None) -> list[str]:
+    """카드 보조 정보 칩. 맨 앞에 수업 과목(있으면) → 정기성 → 매주/격주 → 기타."""
     chips: list[str] = []
+
+    if subjects:
+        chips.append(", ".join(s["name"] for s in subjects))
 
     reg = rec.get("regularity")
     if reg in _REGULARITY_MAP:
@@ -236,12 +331,17 @@ def _compute_prob(
 def _to_frontend_teacher(
     r: dict[str, Any],
     feedback: dict[str, Any] | None = None,
+    teacher_wages: dict[int, dict[str, int]] | None = None,
+    subjects: list[dict[str, Any]] | None = None,
+    alimtalk: dict[str, Any] | None = None,
+    active_visit_count: int | None = None,
 ) -> dict[str, Any]:
     """recommendation_teachers row → 프론트 mapTeacher가 기대하는 형태.
 
     프론트(index.html)는 stat 문자열을 substring 매칭하므로 동일 라벨 유지.
     viewed/viewed_at: 부모님이 추천 이후 선생님 프로필을 본 이력 (teacher_profile_view).
     hours/profile: teacher 테이블 활동 정보. feedback: parent_feedback 집계.
+    wage_by_subject: 신청서 과목(subject_wage_id) 기준 선생님의 현재 시급.
     """
     applied = bool(r.get("applied"))
     rejected = bool(r.get("rejected"))
@@ -259,6 +359,20 @@ def _to_frontend_teacher(
     viewed_at = r.get("viewed_at")
     viewed = _is_real_ts(viewed_at)
     fb = feedback or {}
+
+    wage_by_subject: list[dict[str, Any]] = []
+    if subjects and teacher_wages:
+        for s in subjects:
+            w = teacher_wages.get(s["id"])
+            if not w:
+                continue
+            wage_by_subject.append({
+                "subjectId": s["id"],
+                "subjectName": s["name"],
+                "teacherWage": w["teacher_wage"],
+                "parentCharge": w["parent_charge"],
+            })
+
     return {
         "teacher_account_sid": r.get("teacher_account_sid"),
         "name": name,
@@ -277,20 +391,31 @@ def _to_frontend_teacher(
         "review_count": int(fb.get("review_count") or 0),
         "recommend_count": int(fb.get("recommend_count") or 0),
         "recommend_rate": fb.get("recommend_rate"),  # None | float (0~100)
+        "wage_by_subject": wage_by_subject,
+        "alimtalk_count": int((alimtalk or {}).get("count") or 0),
+        "alimtalk_last_sent_at": (alimtalk or {}).get("last_sent_at").isoformat() if alimtalk and alimtalk.get("last_sent_at") else None,
+        "alimtalk_last_template": (alimtalk or {}).get("last_template") or "",
+        "active_visit_count": int(active_visit_count or 0),
     }
 
 
 def _to_row(
     rec: dict[str, Any],
+    subject_map: dict[int, str],
     parent_history: dict[str, int] | None = None,
     teachers: list[dict[str, Any]] | None = None,
     handler: dict[str, Any] | None = None,
     feedback_map: dict[str, dict[str, Any]] | None = None,
+    wage_range_types: list[str] | None = None,
+    teacher_wages_map: dict[str, dict[int, dict[str, int]]] | None = None,
+    alimtalk_map: dict[tuple[str, str], dict[str, Any]] | None = None,
+    visit_counts_map: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
     실데이터: status, statusKey, deadlineState, assignee, request, region,
             schedule, preferableGender, requestedTeacherName, price,
+            subjects, wageRanges, teachers[].wageBySubject,
             appCount/confirmedCount/lessonCount(parent_history 주입 시).
     추정: prob (휴리스틱, source=heuristic으로 마킹).
     """
@@ -311,6 +436,14 @@ def _to_row(
 
     created_at = rec.get("created_at")
     date_str = created_at.strftime("%m/%d %H:%M") if isinstance(created_at, datetime) else "—"
+    # KST 명시 ISO + 전체 표기 (상세 패널용)
+    if isinstance(created_at, datetime):
+        ca = created_at if created_at.tzinfo else created_at.replace(tzinfo=KST)
+        created_at_iso = ca.isoformat()
+        created_at_full = ca.strftime("%Y-%m-%d %H:%M")
+    else:
+        created_at_iso = None
+        created_at_full = "—"
 
     charge = rec.get("estimated_charge")
     price_str = f"{int(charge):,}원" if charge else "—"
@@ -320,18 +453,14 @@ def _to_row(
     deadline_label = _deadline_label(timer)
 
     # 지역: parent_address 첫 두 토큰 (예: '서울특별시 마포구 ...' → '서울 마포구')
-    addr = (rec.get("parent_address") or "").strip()
-    region = ""
-    if addr:
-        parts = addr.split()
-        if len(parts) >= 2:
-            simple_first = parts[0].replace("특별시", "").replace("광역시", "").replace("자치도", "").strip()
-            region = f"{simple_first} {parts[1]}"
-        else:
-            region = parts[0]
+    region = _region_from_address(rec.get("parent_address"))
 
-    # 요청사항 칩 (정형 조건)
-    chips = _request_chips(rec)
+    # 과목 + 시급 범위
+    subjects = _parse_subjects(rec, subject_map)
+    wage_ranges = _wage_range_objects(wage_range_types)
+
+    # 요청사항 칩 (정형 조건) — 첫 칩은 수업 과목
+    chips = _request_chips(rec, subjects)
 
     # 자유 텍스트 요청
     free_request = (rec.get("parent_request_to_teacher") or "").strip()
@@ -359,6 +488,8 @@ def _to_row(
         "sid": f"SID-{rec['sid']}",
         "child": child_display,
         "date": date_str,
+        "createdAtIso": created_at_iso,
+        "createdAtFull": created_at_full,
         # 핸드오프 매핑
         "status": status_label,
         "statusKey": status_key,
@@ -388,6 +519,8 @@ def _to_row(
         "lessonCount": (parent_history or {}).get("lesson_count"),
         "price": price_str,
         "request": free_request,
+        "subjects": subjects,
+        "wageRanges": wage_ranges,
         "requestChips": chips,
         "requestedTeacherName": rec.get("requested_teacher_name") or "",
         "isUrgent": bool(rec.get("is_urgent")),
@@ -398,7 +531,14 @@ def _to_row(
         "parentMobile": (rec.get("parent_mobile") or "").strip(),
         # 카드/테이블 뷰에서 t1/t2 추천 상태 표시 — batch 주입
         "teachers": [
-            _to_frontend_teacher(t, (feedback_map or {}).get(t.get("teacher_account_sid")))
+            _to_frontend_teacher(
+                t,
+                (feedback_map or {}).get(t.get("teacher_account_sid")),
+                (teacher_wages_map or {}).get(str(t.get("teacher_account_sid") or "")),
+                subjects,
+                (alimtalk_map or {}).get((str(rec["sid"]), str(t.get("teacher_account_sid") or ""))),
+                (visit_counts_map or {}).get(str(t.get("teacher_account_sid") or "")),
+            )
             for t in (teachers or [])
         ],
         # 처리 담당 — matching_ops_handler 테이블에서 batch 주입
@@ -406,25 +546,64 @@ def _to_row(
     }
 
 
+_DATE_RE = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_date(name: str, value: str | None) -> str | None:
+    if value is None or value == "":
+        return None
+    if not _DATE_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"{name} must be YYYY-MM-DD")
+    return value
+
+
 @router.get("")
-async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
+async def list_applications(
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=100000),
+    date_from: str | None = Query(None, alias="from"),
+    date_to: str | None = Query(None, alias="to"),
+) -> dict[str, Any]:
+    date_from = _validate_date("from", date_from)
+    date_to = _validate_date("to", date_to)
     replica = get_replica()
     try:
-        rows = await replica.list_recent_recommendations(limit=limit)
+        rows = await replica.list_recent_recommendations(
+            limit=limit, offset=offset, date_from=date_from, date_to=date_to
+        )
         parent_sids = list({r["parent_account_sid"] for r in rows if r.get("parent_account_sid")})
         history_map = await replica.get_parent_history_counts(parent_sids)
         rec_sids = [str(r["sid"]) for r in rows if r.get("sid") is not None]
         teachers_map = await replica.list_recommendation_teachers_batch(rec_sids)
         teacher_sids = list({
-            t.get("teacher_account_sid")
+            str(t.get("teacher_account_sid"))
             for ts in teachers_map.values()
             for t in ts
             if t.get("teacher_account_sid")
         })
         feedback_map = await replica.get_teacher_feedback_summary(teacher_sids)
+        wage_range_map = await replica.list_wage_ranges(rec_sids)
+
+        # 화면에 노출되는 모든 신청서의 teacher_specialties를 합쳐 batch 시급 조회
+        all_subject_ids: set[int] = set()
+        for r in rows:
+            raw = r.get("teacher_specialties")
+            if not raw:
+                continue
+            for tok in str(raw).split("|"):
+                tok = tok.strip()
+                if tok.isdigit():
+                    all_subject_ids.add(int(tok))
+        teacher_wages_map = await replica.list_teacher_subject_wages(
+            teacher_sids, sorted(all_subject_ids)
+        )
+        alimtalk_map = await replica.list_alimtalk_to_teachers(rec_sids, teacher_sids)
+        visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
     except Exception:
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
+
+    subject_map = await get_subject_map()
 
     handler_map: dict[str, dict[str, Any]] = {}
     if handler_store_available():
@@ -435,13 +614,20 @@ async def list_applications(limit: int = Query(30, le=100)) -> dict[str, Any]:
 
     return {
         "count": len(rows),
+        "filter": {"from": date_from, "to": date_to, "limit": limit, "offset": offset},
+        "hasMore": len(rows) >= limit,
         "rows": [
             _to_row(
                 r,
+                subject_map,
                 history_map.get(r.get("parent_account_sid")),
                 teachers_map.get(str(r.get("sid"))),
                 handler_map.get(str(r.get("sid"))),
                 feedback_map,
+                wage_range_map.get(str(r.get("sid"))),
+                teacher_wages_map,
+                alimtalk_map,
+                visit_counts_map,
             )
             for r in rows
         ],
@@ -483,6 +669,37 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("feedback summary failed sid=%s", sid)
 
+    wage_range_types: list[str] = []
+    try:
+        wage_map = await replica.list_wage_ranges([sid])
+        wage_range_types = wage_map.get(sid, [])
+    except Exception:
+        logger.exception("wage range fetch failed sid=%s (graceful)", sid)
+
+    subject_map = await get_subject_map()
+    subject_ids = [s["id"] for s in _parse_subjects(rec, subject_map)]
+    teacher_sids = [t["teacher_account_sid"] for t in teachers if t.get("teacher_account_sid")]
+    teacher_wages_map: dict[str, dict[int, dict[str, int]]] = {}
+    if subject_ids and teacher_sids:
+        try:
+            teacher_wages_map = await replica.list_teacher_subject_wages(
+                teacher_sids, subject_ids
+            )
+        except Exception:
+            logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
+
+    alimtalk_map: dict[tuple[str, str], dict[str, Any]] = {}
+    visit_counts_map: dict[str, int] = {}
+    if teacher_sids:
+        try:
+            alimtalk_map = await replica.list_alimtalk_to_teachers([sid], teacher_sids)
+        except Exception:
+            logger.exception("alimtalk fetch failed sid=%s (graceful)", sid)
+        try:
+            visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
+        except Exception:
+            logger.exception("visit count fetch failed sid=%s (graceful)", sid)
+
     handler: dict[str, Any] | None = None
     if handler_store_available():
         try:
@@ -492,10 +709,15 @@ async def get_application(sid: str) -> dict[str, Any]:
 
     return _to_row(
         rec,
+        subject_map,
         history_map.get(parent_sid) if parent_sid else None,
         teachers,
         handler,
         feedback_map,
+        wage_range_types,
+        teacher_wages_map,
+        alimtalk_map,
+        visit_counts_map,
     )
 
 
@@ -503,6 +725,7 @@ async def get_application(sid: str) -> dict[str, Any]:
 async def list_teachers(sid: str) -> dict[str, Any]:
     replica = get_replica()
     try:
+        rec = await replica.get_recommendation(sid)
         rows = await replica.list_recommendation_teachers(sid)
     except Exception:
         logger.exception("list_teachers failed sid=%s", sid)
@@ -525,10 +748,41 @@ async def list_teachers(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("feedback summary failed sid=%s", sid)
 
+    subject_map = await get_subject_map()
+    subjects = _parse_subjects(rec, subject_map) if rec else []
+    teacher_sids = [r["teacher_account_sid"] for r in rows if r.get("teacher_account_sid")]
+    teacher_wages_map: dict[str, dict[int, dict[str, int]]] = {}
+    if subjects and teacher_sids:
+        try:
+            teacher_wages_map = await replica.list_teacher_subject_wages(
+                teacher_sids, [s["id"] for s in subjects]
+            )
+        except Exception:
+            logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
+
+    alimtalk_map: dict[tuple[str, str], dict[str, Any]] = {}
+    visit_counts_map: dict[str, int] = {}
+    if teacher_sids:
+        try:
+            alimtalk_map = await replica.list_alimtalk_to_teachers([sid], teacher_sids)
+        except Exception:
+            logger.exception("alimtalk fetch failed sid=%s (graceful)", sid)
+        try:
+            visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
+        except Exception:
+            logger.exception("visit count fetch failed sid=%s (graceful)", sid)
+
     return {
         "sid": sid,
         "teachers": [
-            _to_frontend_teacher(r, feedback_map.get(r.get("teacher_account_sid")))
+            _to_frontend_teacher(
+                r,
+                feedback_map.get(r.get("teacher_account_sid")),
+                teacher_wages_map.get(str(r.get("teacher_account_sid") or "")),
+                subjects,
+                alimtalk_map.get((sid, str(r.get("teacher_account_sid") or ""))),
+                visit_counts_map.get(str(r.get("teacher_account_sid") or "")),
+            )
             for r in rows
         ],
     }

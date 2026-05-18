@@ -27,14 +27,39 @@ class JarandaReplica:
     async def aclose(self) -> None:
         await self._engine.dispose()
 
-    async def list_recent_recommendations(self, limit: int = 30) -> list[dict[str, Any]]:
-        """최근 신청서 목록.
+    async def list_recent_recommendations(
+        self,
+        limit: int = 30,
+        offset: int = 0,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """신청서 목록.
 
-        - 최근 72시간 내 신청서 (status 101 제외)
-        - 페이지 메인 테이블 데이터 소스
+        - date_from/date_to (YYYY-MM-DD, KST) 주면 created_at 기준 [from 00:00, to 23:59:59] 범위.
+          한쪽만 주면 그쪽만 조건으로 사용. 둘 다 없으면 최근 N시간 윈도우(settings).
+        - status 101 (임시저장) 항상 제외
+        - ORDER BY created_at DESC, sid (안정 정렬) — 페이지네이션용
+        - offset/limit 지원 (페이지네이션)
         """
+        where = ["r.status != 101"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if date_from or date_to:
+            if date_from:
+                where.append("r.created_at >= :date_from")
+                params["date_from"] = f"{date_from} 00:00:00"
+            if date_to:
+                # to 일자의 끝(다음날 00:00 미만)까지 포함
+                where.append("r.created_at < :date_to_excl")
+                params["date_to_excl"] = f"{date_to} 23:59:59"
+        else:
+            where.append("r.created_at >= NOW() - INTERVAL :window_hours HOUR")
+            params["window_hours"] = settings.recent_window_hours
+
+        where_sql = " AND ".join(where)
         query = text(
-            """
+            f"""
             SELECT
               r.sid,
               r.parent_account_sid,
@@ -67,6 +92,7 @@ class JarandaReplica:
               r.regularity,
               r.cancelled_info,
               r.re_recommend,
+              r.teacher_specialties,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -78,17 +104,13 @@ class JarandaReplica:
                 WHERE rt.recommendation_sid = r.sid AND rt.requested = 1
               ) AS requested_count
             FROM recommendation r
-            WHERE r.created_at >= NOW() - INTERVAL :window_hours HOUR
-              AND r.status != 101
-            ORDER BY r.updated_at DESC
-            LIMIT :limit
+            WHERE {where_sql}
+            ORDER BY r.created_at DESC, r.sid DESC
+            LIMIT :limit OFFSET :offset
             """
         )
         async with self._session_factory() as session:
-            result = await session.execute(
-                query,
-                {"window_hours": settings.recent_window_hours, "limit": limit},
-            )
+            result = await session.execute(query, params)
             return [dict(row._mapping) for row in result]
 
     async def get_recommendation(self, sid: str) -> dict[str, Any] | None:
@@ -127,6 +149,7 @@ class JarandaReplica:
               r.regularity,
               r.cancelled_info,
               r.re_recommend,
+              r.teacher_specialties,
               (
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
@@ -336,6 +359,158 @@ class JarandaReplica:
                 result[sid]["review_count"] = rc
                 result[sid]["recommend_count"] = rec
                 result[sid]["recommend_rate"] = round(rec / rc * 100, 1) if rc > 0 else None
+        return result
+
+
+    async def list_subject_wages(self) -> dict[int, str]:
+        """jrdtbl_subject_wage id → name. recommendation.teacher_specialties(1~6)와 매핑.
+
+        (1=돌봄, 2=수학/과학, 3=운동, 4=예능, 5=외국어, 6=한글/국어)
+        request_form_category(1~27)와는 다른 차원 — 시급 기준 큰 과목군.
+        """
+        query = text("SELECT id, name FROM jrdtbl_subject_wage")
+        async with self._session_factory() as session:
+            result = await session.execute(query)
+            return {int(row._mapping["id"]): row._mapping["name"] for row in result}
+
+    async def list_wage_ranges(self, sids: list[str]) -> dict[str, list[str]]:
+        """신청서 sid → 부모님이 선택한 wage_range_type 코드 리스트 (DesiredCost enum).
+
+        한 신청서가 여러 범위를 가질 수 있어 list로 반환. is_deleted=0만.
+        """
+        if not sids:
+            return {}
+        query = text(
+            """
+            SELECT recommendation_sid, wage_range_type
+            FROM recommendation_teacher_wage_range
+            WHERE recommendation_sid IN :sids
+              AND is_deleted = 0
+            ORDER BY recommendation_sid, recommendation_teacher_wage_range_id
+            """
+        ).bindparams(bindparam("sids", expanding=True))
+        result: dict[str, list[str]] = {sid: [] for sid in sids}
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"sids": sids})
+            for row in rows:
+                m = row._mapping
+                sid = str(m["recommendation_sid"])
+                t = str(m["wage_range_type"])
+                if sid in result and t not in result[sid]:
+                    result[sid].append(t)
+        return result
+
+    async def list_teacher_subject_wages(
+        self, teacher_sids: list[str], subject_wage_ids: list[int]
+    ) -> dict[str, dict[int, dict[str, int]]]:
+        """(teacher_sid → {subject_wage_id → {teacher_wage, parent_charge}}).
+
+        jrdtbl_subject_teacher_wage_info에서 선생님별 과목별 현재 시급 조회.
+        """
+        if not teacher_sids or not subject_wage_ids:
+            return {}
+        query = text(
+            """
+            SELECT
+              teacher_account_sid,
+              subject_wage_id,
+              teacher_wage_amount,
+              parent_charge_amount
+            FROM jrdtbl_subject_teacher_wage_info
+            WHERE teacher_account_sid IN :tsids
+              AND subject_wage_id IN :wids
+            """
+        ).bindparams(
+            bindparam("tsids", expanding=True),
+            bindparam("wids", expanding=True),
+        )
+        result: dict[str, dict[int, dict[str, int]]] = {sid: {} for sid in teacher_sids}
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                query, {"tsids": teacher_sids, "wids": subject_wage_ids}
+            )
+            for row in rows:
+                m = row._mapping
+                tsid = str(m["teacher_account_sid"])
+                if tsid not in result:
+                    continue
+                result[tsid][int(m["subject_wage_id"])] = {
+                    "teacher_wage": int(m["teacher_wage_amount"] or 0),
+                    "parent_charge": int(m["parent_charge_amount"] or 0),
+                }
+        return result
+
+
+    async def list_alimtalk_to_teachers(
+        self, recommendation_sids: list[str], teacher_sids: list[str]
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """(recommendation_sid, teacher_account_sid) → {count, last_sent_at, last_template}.
+
+        recommendation_alimtalk_send_history(rec_sid, history_id) ⇄ alimtalk_send_history.
+        receiver_account_sid가 선생님 sid와 일치하는 row만 집계.
+        """
+        if not recommendation_sids or not teacher_sids:
+            return {}
+        query = text(
+            """
+            SELECT
+              r.recommendation_sid,
+              a.receiver_account_sid AS teacher_account_sid,
+              COUNT(*) AS cnt,
+              MAX(a.sent_at) AS last_sent,
+              SUBSTRING_INDEX(GROUP_CONCAT(a.template_code ORDER BY a.sent_at DESC), ',', 1) AS last_template
+            FROM recommendation_alimtalk_send_history r
+            JOIN alimtalk_send_history a ON a.history_id = r.history_id
+            WHERE r.recommendation_sid IN :rsids
+              AND a.receiver_account_sid IN :tsids
+            GROUP BY r.recommendation_sid, a.receiver_account_sid
+            """
+        ).bindparams(
+            bindparam("rsids", expanding=True),
+            bindparam("tsids", expanding=True),
+        )
+        result: dict[tuple[str, str], dict[str, Any]] = {}
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                query, {"rsids": recommendation_sids, "tsids": teacher_sids}
+            )
+            for row in rows:
+                m = row._mapping
+                key = (str(m["recommendation_sid"]), str(m["teacher_account_sid"]))
+                result[key] = {
+                    "count": int(m["cnt"] or 0),
+                    "last_sent_at": m["last_sent"],
+                    "last_template": (m["last_template"] or "").split(",")[0],
+                }
+        return result
+
+
+    async def list_active_visit_counts(
+        self, teacher_sids: list[str]
+    ) -> dict[str, int]:
+        """선생님별 진행중 정기 수업(visit) 개수. visit.status=10(진행중)만 카운트.
+
+        visit = 정기 계약 단위 (visit_instance = 1회 방문). 운영팀은 정기 계약 수가 더 의미 있음.
+        """
+        if not teacher_sids:
+            return {}
+        query = text(
+            """
+            SELECT matched_teacher_account_sid AS teacher_sid, COUNT(*) AS cnt
+            FROM visit
+            WHERE matched_teacher_account_sid IN :tsids
+              AND status = 10
+            GROUP BY matched_teacher_account_sid
+            """
+        ).bindparams(bindparam("tsids", expanding=True))
+        result: dict[str, int] = {sid: 0 for sid in teacher_sids}
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"tsids": teacher_sids})
+            for row in rows:
+                m = row._mapping
+                tsid = str(m["teacher_sid"])
+                if tsid in result:
+                    result[tsid] = int(m["cnt"] or 0)
         return result
 
 
