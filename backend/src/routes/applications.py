@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -627,21 +628,37 @@ async def list_applications(
     date_to = _validate_date("to", date_to)
     replica = get_replica()
     try:
+        # 1단계: rows (단독)
         rows = await replica.list_recent_recommendations(
             limit=limit, offset=offset, date_from=date_from, date_to=date_to
         )
         parent_sids = list({r["parent_account_sid"] for r in rows if r.get("parent_account_sid")})
-        history_map = await replica.get_parent_history_counts(parent_sids)
         rec_sids = [str(r["sid"]) for r in rows if r.get("sid") is not None]
-        teachers_map = await replica.list_recommendation_teachers_batch(rec_sids)
+
+        # 2단계: rows에 의존하는 쿼리 + teachers_map + subject_map + handler_map 병렬
+        async def _handler_fetch() -> dict[str, dict[str, Any]]:
+            if not handler_store_available():
+                return {}
+            try:
+                return await get_handler_store().list_by_sids(rec_sids)
+            except Exception:
+                logger.exception("handler batch fetch failed (graceful)")
+                return {}
+
+        history_map, teachers_map, wage_range_map, subject_map, handler_map = await asyncio.gather(
+            replica.get_parent_history_counts(parent_sids),
+            replica.list_recommendation_teachers_batch(rec_sids),
+            replica.list_wage_ranges(rec_sids),
+            get_subject_map(),
+            _handler_fetch(),
+        )
+
         teacher_sids = list({
             str(t.get("teacher_account_sid"))
             for ts in teachers_map.values()
             for t in ts
             if t.get("teacher_account_sid")
         })
-        feedback_map = await replica.get_teacher_feedback_summary(teacher_sids)
-        wage_range_map = await replica.list_wage_ranges(rec_sids)
 
         # 화면에 노출되는 모든 신청서의 teacher_specialties를 합쳐 batch 시급 조회
         all_subject_ids: set[int] = set()
@@ -653,24 +670,24 @@ async def list_applications(
                 tok = tok.strip()
                 if tok.isdigit():
                     all_subject_ids.add(int(tok))
-        teacher_wages_map = await replica.list_teacher_subject_wages(
-            teacher_sids, sorted(all_subject_ids)
+
+        # 3단계: teacher_sids에 의존하는 쿼리 5개 병렬
+        (
+            feedback_map,
+            teacher_wages_map,
+            alimtalk_map,
+            visit_counts_map,
+            teacher_availability_map,
+        ) = await asyncio.gather(
+            replica.get_teacher_feedback_summary(teacher_sids),
+            replica.list_teacher_subject_wages(teacher_sids, sorted(all_subject_ids)),
+            replica.list_alimtalk_to_teachers(rec_sids, teacher_sids),
+            replica.list_active_visit_counts(teacher_sids),
+            replica.list_teacher_weekly_availability(teacher_sids),
         )
-        alimtalk_map = await replica.list_alimtalk_to_teachers(rec_sids, teacher_sids)
-        visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
-        teacher_availability_map = await replica.list_teacher_weekly_availability(teacher_sids)
     except Exception:
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
-
-    subject_map = await get_subject_map()
-
-    handler_map: dict[str, dict[str, Any]] = {}
-    if handler_store_available():
-        try:
-            handler_map = await get_handler_store().list_by_sids(rec_sids)
-        except Exception:
-            logger.exception("handler batch fetch failed (graceful)")
 
     return {
         "count": len(rows),
