@@ -143,7 +143,8 @@ async def generate_insight(
         )
 
     # 1) 신청서 + 메모 fetch
-    #    client는 'SID-12345' 형태로 호출. replica 조회는 raw 숫자 PK 필요.
+    #    client는 'SID-{uuid}' 형태로 호출. PK/replica 조회는 raw uuid로 통일.
+    #    (handlers.py / memos.py와 동일 정책)
     raw_sid = sid[4:] if sid.startswith("SID-") else sid
     try:
         app = await get_application(raw_sid)
@@ -156,7 +157,7 @@ async def generate_insight(
     memos: list[dict[str, Any]] = []
     if memo_store_available():
         try:
-            memos = await get_memo_store().list_memos_by_application(sid)
+            memos = await get_memo_store().list_memos_by_application(raw_sid)
         except Exception:
             logger.exception("insight: list_memos failed sid=%s (graceful)", sid)
 
@@ -168,7 +169,7 @@ async def generate_insight(
     # 2) 캐시 hit 체크
     if not body.force_refresh:
         try:
-            cached = await store.get_cached(sid)
+            cached = await store.get_cached(raw_sid)
         except Exception:
             logger.exception("insight: cache fetch failed sid=%s (graceful)", sid)
             cached = None
@@ -208,7 +209,7 @@ async def generate_insight(
     # 5) 캐시 + 토큰 카운터 저장 (실패해도 응답은 반환)
     try:
         await store.upsert_cache(
-            application_sid=sid,
+            application_sid=raw_sid,
             input_hash=input_hash,
             model_id=settings.llm_model_id,
             response_text=raw_text,
@@ -239,8 +240,9 @@ async def get_cached_insight(sid: str = Path(...)) -> dict[str, Any]:
     if not llm_insight_available():
         raise HTTPException(status_code=503, detail="LLM 인사이트 미설정")
     store = get_llm_insight_store()
+    raw_sid = sid[4:] if sid.startswith("SID-") else sid
     try:
-        cached = await store.get_cached(sid)
+        cached = await store.get_cached(raw_sid)
     except Exception:
         logger.exception("insight: cache fetch failed sid=%s", sid)
         raise HTTPException(status_code=503, detail="cache store failed")
