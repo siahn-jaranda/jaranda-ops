@@ -1126,6 +1126,7 @@ async function _fetchNextBatch() {
   }
 }
 
+let _loadingSession = 0;
 async function loadLiveData(force, preserveSelection) {
   if (!authToken) { showGate(); return; }
   const prevSelectedId = preserveSelection ? state.selectedId : null;
@@ -1136,16 +1137,28 @@ async function loadLiveData(force, preserveSelection) {
     state.hasMore = true;
     state.page = 1;
   }
+  // 진행 중인 다른 session 무효화 — 자동 새로고침이 중간에 끼어들면 직전 fetch는 멈춤
+  const session = ++_loadingSession;
   // 7일 윈도우 전체를 한 번에 fetch. backend 한도 5000, 실데이터 일반 ~600.
+  // 각 batch 받자마자 화면 표시 (전체 끝까지 기다리지 않음).
   while (state.hasMore) {
     const ok = await _fetchNextBatch();
+    if (session !== _loadingSession) return;  // 새 session 시작됐으면 abort
     if (!ok) break;
+    if (APPS_ALL.length > 0) {
+      APPS = APPS_ALL;
+      if (state.selectedId == null && _currentPageApps().length > 0) {
+        state.selectedId = _currentPageApps()[0].id;
+      }
+      setDataSource('live');
+      render();
+    }
   }
   if (APPS_ALL.length > 0) {
     APPS = APPS_ALL;
     if (prevSelectedId && APPS_ALL.some(a => a.id === prevSelectedId)) {
       state.selectedId = prevSelectedId;
-    } else {
+    } else if (state.selectedId == null) {
       state.selectedId = _currentPageApps()[0]?.id || null;
     }
     setDataSource('live');
@@ -1179,6 +1192,8 @@ function startAutoRefresh() {
     if (!authToken) return;
     if (state.tab !== 'matching') return;
     if (document.hidden) return;
+    // 이미 fetch 진행 중이면 skip (7일치 580+건 fetch가 5분 가까이 걸려 자동 갱신과 겹침)
+    if (state.loading) return;
     loadLiveData(true, true);
   }, AUTO_REFRESH_MS);
 }
