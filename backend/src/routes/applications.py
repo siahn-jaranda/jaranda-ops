@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.config import settings
 from src.db import get_replica
+from src.firestore_chat import find_chat_status, firestore_available
 from src.handler_store import get_handler_store, handler_store_available
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
@@ -369,6 +370,18 @@ def _schedule_match(requested_days: list[str], available_days: set[str] | None) 
     }
 
 
+def _derive_chat_status(eligible: bool, chat_room: dict[str, Any] | None) -> str | None:
+    """채팅 상태 3분류 + None.
+
+    Firestore 미사용 시(chat_room=None)는 eligible 만으로 before/None 판단.
+    """
+    if chat_room and chat_room.get("status"):
+        return str(chat_room["status"])  # "active" | "ended"
+    if eligible:
+        return "before"
+    return None
+
+
 def _to_frontend_teacher(
     r: dict[str, Any],
     feedback: dict[str, Any] | None = None,
@@ -377,6 +390,7 @@ def _to_frontend_teacher(
     push: dict[str, Any] | None = None,
     active_visit_count: int | None = None,
     schedule_match: dict[str, Any] | None = None,
+    chat_room: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """recommendation_teachers row → 프론트 mapTeacher가 기대하는 형태.
 
@@ -452,6 +466,13 @@ def _to_frontend_teacher(
         # applied=1 은 accepted를 함의 (지원하려면 먼저 수락 필요).
         "chat_eligible": applied or accepted,
         "schedule_match": schedule_match,  # None | {status, requestedDays, availableDays, matchedDays}
+        # 채팅 상태 3분류 (운영팀 요구 — 채팅 전/중/종료):
+        #  - "active" : 양쪽 채팅방 존재 + 양쪽 모두 deactivatedAt=null
+        #  - "ended"  : 어느 한쪽이라도 deactivatedAt 있음 또는 한쪽 document만 존재
+        #  - "before" : Firestore에 채팅방 미존재 + chat_eligible(accepted=1)
+        #  - null     : 자격 없음 (미노출)
+        "chat_status": _derive_chat_status(applied or accepted, chat_room),
+        "chat_last_message_at": (chat_room or {}).get("last_message_at"),
     }
 
 
@@ -467,6 +488,7 @@ def _to_row(
     push_map: dict[tuple[str, str], dict[str, Any]] | None = None,
     visit_counts_map: dict[str, int] | None = None,
     teacher_availability_map: dict[str, set[str]] | None = None,
+    chat_room_map: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
@@ -602,6 +624,9 @@ def _to_row(
                     requested_days,
                     (teacher_availability_map or {}).get(str(t.get("teacher_account_sid") or "")),
                 ),
+                (chat_room_map or {}).get(
+                    (str(rec.get("parent_account_sid") or ""), str(t.get("teacher_account_sid") or ""))
+                ),
             )
             for t in (teachers or [])
         ],
@@ -712,6 +737,21 @@ async def list_applications(
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
 
+    # Firestore 채팅방 batch (firestore_enabled=False면 빈 dict). 부모님-선생님 페어 단위.
+    chat_room_map: dict[tuple[str, str], dict[str, Any]] = {}
+    if firestore_available():
+        pairs: list[tuple[str, str]] = []
+        for r in rows:
+            parent_sid = r.get("parent_account_sid")
+            if not parent_sid:
+                continue
+            for t in teachers_map.get(str(r.get("sid")), []) or []:
+                tsid = t.get("teacher_account_sid")
+                if tsid:
+                    pairs.append((str(parent_sid), str(tsid)))
+        if pairs:
+            chat_room_map = await find_chat_status(list(set(pairs)))
+
     return {
         "count": len(rows),
         "filter": {"from": date_from, "to": date_to, "limit": limit, "offset": offset},
@@ -729,6 +769,7 @@ async def list_applications(
                 push_map,
                 visit_counts_map,
                 teacher_availability_map,
+                chat_room_map,
             )
             for r in rows
         ],
@@ -814,6 +855,11 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("handler fetch failed sid=%s (graceful)", sid)
 
+    chat_room_map: dict[tuple[str, str], dict[str, Any]] = {}
+    if firestore_available() and parent_sid and teacher_sids:
+        pairs = [(str(parent_sid), str(ts)) for ts in teacher_sids]
+        chat_room_map = await find_chat_status(pairs)
+
     return _to_row(
         rec,
         subject_map,
@@ -826,6 +872,7 @@ async def get_application(sid: str) -> dict[str, Any]:
         push_map,
         visit_counts_map,
         teacher_availability_map,
+        chat_room_map,
     )
 
 
@@ -887,6 +934,12 @@ async def list_teachers(sid: str) -> dict[str, Any]:
             logger.exception("teacher availability fetch failed sid=%s (graceful)", sid)
     requested_days = _parse_requested_days(rec) if rec else []
 
+    parent_sid_for_chat = (rec or {}).get("parent_account_sid")
+    chat_room_map: dict[tuple[str, str], dict[str, Any]] = {}
+    if firestore_available() and parent_sid_for_chat and teacher_sids:
+        pairs = [(str(parent_sid_for_chat), str(ts)) for ts in teacher_sids]
+        chat_room_map = await find_chat_status(pairs)
+
     return {
         "sid": sid,
         "teachers": [
@@ -900,6 +953,9 @@ async def list_teachers(sid: str) -> dict[str, Any]:
                 _schedule_match(
                     requested_days,
                     teacher_availability_map.get(str(r.get("teacher_account_sid") or "")),
+                ),
+                chat_room_map.get(
+                    (str(parent_sid_for_chat or ""), str(r.get("teacher_account_sid") or ""))
                 ),
             )
             for r in rows

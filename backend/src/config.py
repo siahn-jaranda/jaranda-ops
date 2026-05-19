@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 512
     llm_daily_limit: int = 200
 
+    # Firestore (자란다 채팅방 직접 조회). 미설정 시 채팅방 신호 비활성 (graceful, 응답 필드 null).
+    # 자란다 prod Firestore 프로젝트 = "platform-firebase-chat" (별도 GCP project).
+    # matching-ops-api는 platform-jaranda-kr-standby에 떠있으므로 cross-project IAM 필요:
+    #   gcloud projects add-iam-policy-binding platform-firebase-chat \
+    #     --member="serviceAccount:<matching-ops-api SA>" --role="roles/datastore.viewer"
+    firestore_project: str = ""
+    firestore_enabled: bool = False
+
     @property
     def origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
