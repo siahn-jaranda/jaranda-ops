@@ -1586,6 +1586,8 @@ function allTeachersBlock(app) {
     ? `<div class="teachers-rest">${rest.map(t => teacherDetail(teacherLabel(t), t)).join('')}</div>`
     : '';
   return primaryHtml + toggleHtml + restHtml;
+}
+
 // 요일 약어 매핑 (DayOfWeek → 한글 1글자)
 const _DAY_KOR = {MONDAY:'월',TUESDAY:'화',WEDNESDAY:'수',THURSDAY:'목',FRIDAY:'금',SATURDAY:'토',SUNDAY:'일'};
 function _scheduleBadge(sm) {
