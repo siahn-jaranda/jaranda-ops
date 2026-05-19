@@ -626,12 +626,22 @@ async def list_applications(
 ) -> dict[str, Any]:
     date_from = _validate_date("from", date_from)
     date_to = _validate_date("to", date_to)
+    import time
     replica = get_replica()
+    _t0 = time.perf_counter()
+
+    async def _timed(name: str, coro):
+        t = time.perf_counter()
+        result = await coro
+        dt = (time.perf_counter() - t) * 1000
+        logger.info("list_apps_q name=%s ms=%.0f", name, dt)
+        return result
+
     try:
         # 1단계: rows (단독)
-        rows = await replica.list_recent_recommendations(
+        rows = await _timed("rows", replica.list_recent_recommendations(
             limit=limit, offset=offset, date_from=date_from, date_to=date_to
-        )
+        ))
         parent_sids = list({r["parent_account_sid"] for r in rows if r.get("parent_account_sid")})
         rec_sids = [str(r["sid"]) for r in rows if r.get("sid") is not None]
 
@@ -645,13 +655,15 @@ async def list_applications(
                 logger.exception("handler batch fetch failed (graceful)")
                 return {}
 
+        _t2 = time.perf_counter()
         history_map, teachers_map, wage_range_map, subject_map, handler_map = await asyncio.gather(
-            replica.get_parent_history_counts(parent_sids),
-            replica.list_recommendation_teachers_batch(rec_sids),
-            replica.list_wage_ranges(rec_sids),
-            get_subject_map(),
-            _handler_fetch(),
+            _timed("history", replica.get_parent_history_counts(parent_sids)),
+            _timed("teachers", replica.list_recommendation_teachers_batch(rec_sids)),
+            _timed("wage_range", replica.list_wage_ranges(rec_sids)),
+            _timed("subject_map", get_subject_map()),
+            _timed("handler", _handler_fetch()),
         )
+        logger.info("list_apps_stage stage=2 ms=%.0f", (time.perf_counter() - _t2) * 1000)
 
         teacher_sids = list({
             str(t.get("teacher_account_sid"))
@@ -672,6 +684,7 @@ async def list_applications(
                     all_subject_ids.add(int(tok))
 
         # 3단계: teacher_sids에 의존하는 쿼리 5개 병렬
+        _t3 = time.perf_counter()
         (
             feedback_map,
             teacher_wages_map,
@@ -679,11 +692,17 @@ async def list_applications(
             visit_counts_map,
             teacher_availability_map,
         ) = await asyncio.gather(
-            replica.get_teacher_feedback_summary(teacher_sids),
-            replica.list_teacher_subject_wages(teacher_sids, sorted(all_subject_ids)),
-            replica.list_alimtalk_to_teachers(rec_sids, teacher_sids),
-            replica.list_active_visit_counts(teacher_sids),
-            replica.list_teacher_weekly_availability(teacher_sids),
+            _timed("feedback", replica.get_teacher_feedback_summary(teacher_sids)),
+            _timed("teacher_wages", replica.list_teacher_subject_wages(teacher_sids, sorted(all_subject_ids))),
+            _timed("alimtalk", replica.list_alimtalk_to_teachers(rec_sids, teacher_sids)),
+            _timed("visit_counts", replica.list_active_visit_counts(teacher_sids)),
+            _timed("teacher_avail", replica.list_teacher_weekly_availability(teacher_sids)),
+        )
+        logger.info(
+            "list_apps_stage stage=3 ms=%.0f rec_sids=%d teacher_sids=%d total_ms=%.0f",
+            (time.perf_counter() - _t3) * 1000,
+            len(rec_sids), len(teacher_sids),
+            (time.perf_counter() - _t0) * 1000,
         )
     except Exception:
         logger.exception("list_applications failed")
