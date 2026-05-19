@@ -124,12 +124,15 @@ class SnapshotStore:
     async def list_managed(self, limit: int = 100) -> list[dict[str, Any]]:
         """관리 신청서 목록 — 메모 있는 sid 기준, 최근 메모 작성순.
 
-        결과 row: snapshot 필드 + memo_count + last_memo_at + handler 정보(있으면).
+        memo가 driving table. snapshot은 LEFT JOIN — _refresh_snapshot이 실패한
+        과거 row(예: replica 윈도우 밖 신청서)도 메모만 있으면 목록에 노출.
+        snapshot 누락 시 child_name 등은 NULL → _row_to_dict의 default가 채움.
+        결과 row: (snapshot 필드 nullable) + memo_count + last_memo_at + handler.
         """
         query = text(
             """
             SELECT
-              s.application_sid,
+              mm.application_sid,
               s.child_name, s.region, s.status_key, s.status_label,
               s.subjects, s.wage_ranges,
               s.request_chips, s.parent_request, s.matched_teacher,
@@ -139,16 +142,16 @@ class SnapshotStore:
               s.snapshot_at, s.snapshot_updated_at,
               mm.memo_count, mm.last_memo_at,
               h.handler_email, h.handler_name, h.claimed_at AS handler_claimed_at
-            FROM matching_ops_application_snapshot s
-            JOIN (
+            FROM (
               SELECT application_sid,
                      COUNT(*) AS memo_count,
                      MAX(created_at) AS last_memo_at
               FROM matching_ops_memo
               WHERE deleted_at IS NULL
               GROUP BY application_sid
-            ) mm ON mm.application_sid = s.application_sid
-            LEFT JOIN matching_ops_handler h ON h.application_sid = s.application_sid
+            ) mm
+            LEFT JOIN matching_ops_application_snapshot s ON s.application_sid = mm.application_sid
+            LEFT JOIN matching_ops_handler h ON h.application_sid = mm.application_sid
             ORDER BY mm.last_memo_at DESC
             LIMIT :limit
             """

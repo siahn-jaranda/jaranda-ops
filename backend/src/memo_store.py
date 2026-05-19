@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from src.config import settings
@@ -89,6 +89,38 @@ class MemoStore:
                 query, {"application_sid": application_sid, "limit": limit}
             )
             return [_row_to_dict(row) for row in result]
+
+    async def counts_by_sids(
+        self, application_sids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """list_applications batch 주입용 — {sid: {count, last_created_at}}.
+
+        활성 메모(deleted_at IS NULL)만 카운트.
+        """
+        if not application_sids:
+            return {}
+        query = text(
+            """
+            SELECT application_sid,
+                   COUNT(*) AS cnt,
+                   MAX(created_at) AS last_created_at
+            FROM matching_ops_memo
+            WHERE application_sid IN :sids
+              AND deleted_at IS NULL
+            GROUP BY application_sid
+            """
+        ).bindparams(bindparam("sids", expanding=True))
+        async with self._session_factory() as session:
+            result = await session.execute(query, {"sids": application_sids})
+            out: dict[str, dict[str, Any]] = {}
+            for row in result:
+                m = row._mapping
+                last: datetime | None = m["last_created_at"]
+                out[m["application_sid"]] = {
+                    "count": int(m["cnt"] or 0),
+                    "last_created_at": last.isoformat() if last else None,
+                }
+            return out
 
     async def delete_memo(self, memo_id: int, author_email: str) -> bool:
         """본인 글만 soft delete. 성공 시 True, 권한 없음/없음 시 False."""
