@@ -374,7 +374,7 @@ def _to_frontend_teacher(
     feedback: dict[str, Any] | None = None,
     teacher_wages: dict[int, dict[str, int]] | None = None,
     subjects: list[dict[str, Any]] | None = None,
-    alimtalk: dict[str, Any] | None = None,
+    push: dict[str, Any] | None = None,
     active_visit_count: int | None = None,
     schedule_match: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -439,9 +439,13 @@ def _to_frontend_teacher(
         "recommend_count": int(fb.get("recommend_count") or 0),
         "recommend_rate": fb.get("recommend_rate"),  # None | float (0~100)
         "wage_by_subject": wage_by_subject,
-        "alimtalk_count": int((alimtalk or {}).get("count") or 0),
-        "alimtalk_last_sent_at": (alimtalk or {}).get("last_sent_at").isoformat() if alimtalk and alimtalk.get("last_sent_at") else None,
-        "alimtalk_last_template": (alimtalk or {}).get("last_template") or "",
+        # PUSH 발송 이력 — fcm_send_history (선생님 수업요청 PUSH).
+        # 알림톡(recommendation_alimtalk_send_history)은 부모/선생 혼재이고 운영 행동과 약간 거리.
+        # PUSH가 매칭 액션에 더 직접적이라 운영 요청으로 교체 (2026-05-19).
+        "push_count": int((push or {}).get("count") or 0),
+        "push_last_sent_at": (push or {}).get("last_sent_at").isoformat() if push and push.get("last_sent_at") else None,
+        "push_read_count": int((push or {}).get("read_count") or 0),
+        "push_last_name": (push or {}).get("last_push_name") or "",
         "active_visit_count": int(active_visit_count or 0),
         # 부모님 ↔ 선생님 채팅 자격: 자란다 정책상 recommendation_teachers.accepted=1 이면
         # 부모님이 채팅을 시작할 수 있음 (실제 채팅방은 Firestore에 별도 저장).
@@ -460,7 +464,7 @@ def _to_row(
     feedback_map: dict[str, dict[str, Any]] | None = None,
     wage_range_types: list[str] | None = None,
     teacher_wages_map: dict[str, dict[int, dict[str, int]]] | None = None,
-    alimtalk_map: dict[tuple[str, str], dict[str, Any]] | None = None,
+    push_map: dict[tuple[str, str], dict[str, Any]] | None = None,
     visit_counts_map: dict[str, int] | None = None,
     teacher_availability_map: dict[str, set[str]] | None = None,
 ) -> dict[str, Any]:
@@ -592,7 +596,7 @@ def _to_row(
                 (feedback_map or {}).get(t.get("teacher_account_sid")),
                 (teacher_wages_map or {}).get(str(t.get("teacher_account_sid") or "")),
                 subjects,
-                (alimtalk_map or {}).get((str(rec["sid"]), str(t.get("teacher_account_sid") or ""))),
+                (push_map or {}).get((str(rec["sid"]), str(t.get("teacher_account_sid") or ""))),
                 (visit_counts_map or {}).get(str(t.get("teacher_account_sid") or "")),
                 _schedule_match(
                     requested_days,
@@ -688,13 +692,13 @@ async def list_applications(
         (
             feedback_map,
             teacher_wages_map,
-            alimtalk_map,
+            push_map,
             visit_counts_map,
             teacher_availability_map,
         ) = await asyncio.gather(
             _timed("feedback", replica.get_teacher_feedback_summary(teacher_sids)),
             _timed("teacher_wages", replica.list_teacher_subject_wages(teacher_sids, sorted(all_subject_ids))),
-            _timed("alimtalk", replica.list_alimtalk_to_teachers(rec_sids, teacher_sids)),
+            _timed("push", replica.list_push_to_teachers(rec_sids, teacher_sids)),
             _timed("visit_counts", replica.list_active_visit_counts(teacher_sids)),
             _timed("teacher_avail", replica.list_teacher_weekly_availability(teacher_sids)),
         )
@@ -722,7 +726,7 @@ async def list_applications(
                 feedback_map,
                 wage_range_map.get(str(r.get("sid"))),
                 teacher_wages_map,
-                alimtalk_map,
+                push_map,
                 visit_counts_map,
                 teacher_availability_map,
             )
@@ -785,13 +789,13 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
 
-    alimtalk_map: dict[tuple[str, str], dict[str, Any]] = {}
+    push_map: dict[tuple[str, str], dict[str, Any]] = {}
     visit_counts_map: dict[str, int] = {}
     if teacher_sids:
         try:
-            alimtalk_map = await replica.list_alimtalk_to_teachers([sid], teacher_sids)
+            push_map = await replica.list_push_to_teachers([sid], teacher_sids)
         except Exception:
-            logger.exception("alimtalk fetch failed sid=%s (graceful)", sid)
+            logger.exception("push fetch failed sid=%s (graceful)", sid)
         try:
             visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
         except Exception:
@@ -819,7 +823,7 @@ async def get_application(sid: str) -> dict[str, Any]:
         feedback_map,
         wage_range_types,
         teacher_wages_map,
-        alimtalk_map,
+        push_map,
         visit_counts_map,
         teacher_availability_map,
     )
@@ -864,13 +868,13 @@ async def list_teachers(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
 
-    alimtalk_map: dict[tuple[str, str], dict[str, Any]] = {}
+    push_map: dict[tuple[str, str], dict[str, Any]] = {}
     visit_counts_map: dict[str, int] = {}
     if teacher_sids:
         try:
-            alimtalk_map = await replica.list_alimtalk_to_teachers([sid], teacher_sids)
+            push_map = await replica.list_push_to_teachers([sid], teacher_sids)
         except Exception:
-            logger.exception("alimtalk fetch failed sid=%s (graceful)", sid)
+            logger.exception("push fetch failed sid=%s (graceful)", sid)
         try:
             visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
         except Exception:
@@ -891,7 +895,7 @@ async def list_teachers(sid: str) -> dict[str, Any]:
                 feedback_map.get(r.get("teacher_account_sid")),
                 teacher_wages_map.get(str(r.get("teacher_account_sid") or "")),
                 subjects,
-                alimtalk_map.get((sid, str(r.get("teacher_account_sid") or ""))),
+                push_map.get((sid, str(r.get("teacher_account_sid") or ""))),
                 visit_counts_map.get(str(r.get("teacher_account_sid") or "")),
                 _schedule_match(
                     requested_days,

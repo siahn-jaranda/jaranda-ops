@@ -445,46 +445,55 @@ class JarandaReplica:
         return result
 
 
-    async def list_alimtalk_to_teachers(
+    async def list_push_to_teachers(
         self, recommendation_sids: list[str], teacher_sids: list[str]
     ) -> dict[tuple[str, str], dict[str, Any]]:
-        """(recommendation_sid, teacher_account_sid) → {count, last_sent_at, last_template}.
+        """(recommendation_sid, teacher_account_sid) → {count, last_sent_at, read_count, last_push_name}.
 
-        recommendation_alimtalk_send_history(rec_sid, history_id) ⇄ alimtalk_send_history.
-        receiver_account_sid가 선생님 sid와 일치하는 row만 집계.
+        fcm_send_history (FCM PUSH 발송 이력). 신청서 선생님 추천 PUSH만 집계:
+          - app_type='TEACHER'
+          - push_name LIKE '선생님_수업요청%' (일반 + 플래너)
+          - deep_link = 'recommend/normal?requestFormId=<rec_sid>' 정확 일치
+        receiver_id 인덱스(MUL) 활용 + sent_at 30일 윈도우로 풀스캔 방지.
         """
         if not recommendation_sids or not teacher_sids:
             return {}
+        deep_links = [f"recommend/normal?requestFormId={s}" for s in recommendation_sids]
         query = text(
             """
             SELECT
-              r.recommendation_sid,
-              a.receiver_account_sid AS teacher_account_sid,
+              deep_link,
+              receiver_id AS teacher_account_sid,
               COUNT(*) AS cnt,
-              MAX(a.sent_at) AS last_sent,
-              SUBSTRING_INDEX(GROUP_CONCAT(a.template_code ORDER BY a.sent_at DESC), ',', 1) AS last_template
-            FROM recommendation_alimtalk_send_history r
-            JOIN alimtalk_send_history a ON a.history_id = r.history_id
-            WHERE r.recommendation_sid IN :rsids
-              AND a.receiver_account_sid IN :tsids
-            GROUP BY r.recommendation_sid, a.receiver_account_sid
+              MAX(sent_at) AS last_sent,
+              SUM(CASE WHEN read_at IS NOT NULL THEN 1 ELSE 0 END) AS read_cnt,
+              SUBSTRING_INDEX(GROUP_CONCAT(push_name ORDER BY sent_at DESC), ',', 1) AS last_push_name
+            FROM fcm_send_history
+            WHERE app_type = 'TEACHER'
+              AND push_name LIKE '선생님_수업요청%'
+              AND receiver_id IN :tsids
+              AND deep_link IN :links
+              AND sent_at > NOW() - INTERVAL 30 DAY
+            GROUP BY deep_link, receiver_id
             """
         ).bindparams(
-            bindparam("rsids", expanding=True),
             bindparam("tsids", expanding=True),
+            bindparam("links", expanding=True),
         )
         result: dict[tuple[str, str], dict[str, Any]] = {}
         async with self._session_factory() as session:
             rows = await session.execute(
-                query, {"rsids": recommendation_sids, "tsids": teacher_sids}
+                query, {"tsids": teacher_sids, "links": deep_links}
             )
             for row in rows:
                 m = row._mapping
-                key = (str(m["recommendation_sid"]), str(m["teacher_account_sid"]))
+                rec_sid = str(m["deep_link"]).replace("recommend/normal?requestFormId=", "")
+                key = (rec_sid, str(m["teacher_account_sid"]))
                 result[key] = {
                     "count": int(m["cnt"] or 0),
                     "last_sent_at": m["last_sent"],
-                    "last_template": (m["last_template"] or "").split(",")[0],
+                    "read_count": int(m["read_cnt"] or 0),
+                    "last_push_name": (m["last_push_name"] or "").split(",")[0],
                 }
         return result
 
