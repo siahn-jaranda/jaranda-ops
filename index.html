@@ -620,7 +620,7 @@ input, textarea, select { font-family: inherit; }
         <span class="icon">🔍</span>
         <input id="search-input" placeholder="신청서·고객명 검색" oninput="onSearch(this.value)">
       </div>
-      <button class="btn btn-secondary" onclick="loadLiveData(true)"><span class="icon">↻</span>새로고침</button>
+      <button class="btn btn-secondary" onclick="manualRefresh()"><span class="icon">↻</span>새로고침</button>
       <div class="avatar" id="user-avatar">박</div>
     </div>
   </header>
@@ -658,10 +658,8 @@ input, textarea, select { font-family: inherit; }
           <input type="date" id="filter-to" onchange="onDateChange()">
           <button class="btn btn-secondary btn-sm" onclick="resetDateFilter()">초기화</button>
         </div>
-        <div class="pager" id="pager">
-          <button class="pg-btn" id="pg-prev" onclick="gotoPage(state.page-1)" title="이전 페이지">‹</button>
-          <span class="pg-info"><span id="pg-current">1</span> / <span id="pg-total">1</span></span>
-          <button class="pg-btn" id="pg-next" onclick="gotoPage(state.page+1)" title="다음 페이지">›</button>
+        <div class="pager" id="pager" title="5분마다 자동 새로고침">
+          <span class="pg-info" id="pg-info-text">—</span>
         </div>
         <div class="seg-group" id="layout-seg">
           <button class="seg-btn active" data-layout="card" onclick="setLayout('card')"><span class="icon">▭</span>카드</button>
@@ -799,10 +797,13 @@ let APPS = [];
 const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','강구슬'];
 
 // ====== STATE ======
-// 페이지네이션: 화면당 PAGE_SIZE, 서버 fetch는 BATCH_SIZE 단위 (=2 페이지 분량).
-// 3페이지로 넘어가면 2번째 batch fetch — 로딩 부담 분산.
-const PAGE_SIZE = 15;
-const BATCH_SIZE = 30;
+// 페이지네이션 제거 — 7일 윈도우 신청서를 한 번에 fetch.
+// 5분마다 자동 새로고침. 사용자가 보고 있는 신청서는 selectedId로 유지.
+const PAGE_SIZE = 1000;
+const BATCH_SIZE = 1000;
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
+let _autoRefreshTimer = null;
+let _lastRefreshAt = null;
 // 기본 기간: 오늘 - 7일 (KST 가정 — 운영팀은 모두 한국 로컬).
 const DEFAULT_FROM = (() => {
   const d = new Date();
@@ -920,6 +921,7 @@ async function handleGoogleCredential(response) {
     showApp();
     _initDateInputs();
     loadLiveData(true);
+    startAutoRefresh();
   } catch (e) {
     showGate('로그인 오류: ' + e.message);
   }
@@ -929,6 +931,7 @@ function logout() {
   authToken = ''; authEmail = '';
   localStorage.removeItem('mo-token');
   localStorage.removeItem('mo-email');
+  if (_autoRefreshTimer) { clearInterval(_autoRefreshTimer); _autoRefreshTimer = null; }
   showGate();
 }
 
@@ -1104,8 +1107,9 @@ async function _fetchNextBatch() {
   }
 }
 
-async function loadLiveData(force) {
+async function loadLiveData(force, preserveSelection) {
   if (!authToken) { showGate(); return; }
+  const prevSelectedId = preserveSelection ? state.selectedId : null;
   // force=true면 처음부터 다시 (필터 변경 또는 새로고침)
   if (force) {
     APPS_ALL = [];
@@ -1113,20 +1117,51 @@ async function loadLiveData(force) {
     state.hasMore = true;
     state.page = 1;
   }
-  // 페이지에 필요한 데이터까지 batch 로드
-  const needed = state.page * PAGE_SIZE;
-  while (APPS_ALL.length < needed && state.hasMore) {
+  // 7일 윈도우 전체를 한 번에 fetch. backend 한도 5000, 실데이터 일반 ~600.
+  while (state.hasMore) {
     const ok = await _fetchNextBatch();
     if (!ok) break;
   }
   if (APPS_ALL.length > 0) {
     APPS = APPS_ALL;
-    state.selectedId = _currentPageApps()[0]?.id || null;
+    if (prevSelectedId && APPS_ALL.some(a => a.id === prevSelectedId)) {
+      state.selectedId = prevSelectedId;
+    } else {
+      state.selectedId = _currentPageApps()[0]?.id || null;
+    }
     setDataSource('live');
   } else {
     setDataSource('mock');
   }
+  _lastRefreshAt = new Date();
+  updateRefreshLabel();
   render();
+}
+
+function updateRefreshLabel() {
+  const el = document.getElementById('pg-info-text');
+  if (!el) return;
+  if (!_lastRefreshAt) { el.textContent = '—'; return; }
+  const h = String(_lastRefreshAt.getHours()).padStart(2,'0');
+  const m = String(_lastRefreshAt.getMinutes()).padStart(2,'0');
+  el.textContent = `${h}:${m} 갱신 · 5분 주기`;
+}
+
+async function manualRefresh() {
+  // 사용자가 누른 새로고침은 보고 있던 신청서 선택을 유지한다.
+  startAutoRefresh();
+  await loadLiveData(true, true);
+}
+
+function startAutoRefresh() {
+  if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+  _autoRefreshTimer = setInterval(() => {
+    // 인증 끊기거나 다른 탭이면 skip
+    if (!authToken) return;
+    if (state.tab !== 'matching') return;
+    if (document.hidden) return;
+    loadLiveData(true, true);
+  }, AUTO_REFRESH_MS);
 }
 
 // 현재 페이지 슬라이스
@@ -1830,39 +1865,24 @@ function selectApp(id) {
   render();
   if (id) loadCachedInsight(id);
 }
-async function setSort(key) {
+function setSort(key) {
+  // loadLiveData가 항상 7일 전체를 fetch하므로 추가 batch fetch 불필요.
   state.sort = key;
   state.page = 1;
   document.querySelectorAll('#sort-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === key));
   render();
-  // 임박순/확률순은 전체 데이터가 있어야 정확. 백그라운드로 끝까지 fetch.
-  if (key === 'urgent' || key === 'prob') {
-    while (state.hasMore && !state.loading) {
-      const ok = await _fetchNextBatch();
-      if (!ok) break;
-    }
-    render();
-  }
 }
 function setLayout(key) {
   state.layout = key;
   document.querySelectorAll('#layout-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.layout === key));
   render();
 }
-async function toggleRespondedOnly() {
+function toggleRespondedOnly() {
   state.respondedOnly = !state.respondedOnly;
   state.page = 1;
   const btn = document.getElementById('responded-toggle');
   if (btn) btn.classList.toggle('active', state.respondedOnly);
   render();
-  // 응답 있는 신청서 수를 정확히 보려면 전체 batch가 필요하다 — 백그라운드 fetch.
-  if (state.respondedOnly) {
-    while (state.hasMore && !state.loading) {
-      const ok = await _fetchNextBatch();
-      if (!ok) break;
-    }
-    render();
-  }
 }
 function onSearch(v) { state.search = v.trim(); state.page = 1; render(); }
 
@@ -2156,6 +2176,7 @@ if (authToken) {
   _initDateInputs();
   render();
   loadLiveData(true);
+  startAutoRefresh();
 } else {
   render();
   showGate();

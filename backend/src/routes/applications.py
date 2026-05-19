@@ -564,7 +564,7 @@ def _validate_date(name: str, value: str | None) -> str | None:
 
 @router.get("")
 async def list_applications(
-    limit: int = Query(30, ge=1, le=100),
+    limit: int = Query(1000, ge=1, le=5000),
     offset: int = Query(0, ge=0, le=100000),
     date_from: str | None = Query(None, alias="from"),
     date_to: str | None = Query(None, alias="to"),
