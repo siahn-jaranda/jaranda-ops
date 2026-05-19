@@ -433,13 +433,13 @@ input, textarea, select { font-family: inherit; }
 .teachers-rest { display: flex; flex-direction: column; gap: 6px; }
 .muted-count { color: #9CA3AF; font-size: 11.5px; font-weight: 500; margin-left: 4px; }
 .kv .v .dim { color: #9CA3AF; font-weight: 500; margin-left: 4px; }
-.teacher-card .tc-alimtalk {
+.teacher-card .tc-meta-row {
   display: flex; justify-content: space-between; align-items: baseline;
   margin-top: 6px; font-size: 11.5px;
 }
-.teacher-card .tc-alimtalk-lbl { color: #6B7280; font-weight: 600; }
-.teacher-card .tc-alimtalk-val { color: #1E2530; font-weight: 600; font-variant-numeric: tabular-nums; }
-.teacher-card .tc-alimtalk-val .dim { color: #9CA3AF; font-weight: 500; }
+.teacher-card .tc-meta-lbl { color: #6B7280; font-weight: 600; }
+.teacher-card .tc-meta-val { color: #1E2530; font-weight: 600; font-variant-numeric: tabular-nums; }
+.teacher-card .tc-meta-val .dim { color: #9CA3AF; font-weight: 500; }
 .teacher-card .body { flex: 1; min-width: 0; }
 .teacher-card .row1 { display: flex; align-items: center; gap: 6px; }
 .teacher-card .row1 .lbl { font-size: 11px; font-weight: 700; color: #6B7280; letter-spacing: 0.04em; }
@@ -990,9 +990,10 @@ function backendToApp(r) {
       university: t.university || '',
       major: t.major || '',
       wageBySubject: Array.isArray(t.wage_by_subject) ? t.wage_by_subject : [],
-      alimtalkCount: Number(t.alimtalk_count || 0),
-      alimtalkLastSentAt: t.alimtalk_last_sent_at || null,
-      alimtalkLastTemplate: t.alimtalk_last_template || '',
+      pushCount: Number(t.push_count || 0),
+      pushLastSentAt: t.push_last_sent_at || null,
+      pushReadCount: Number(t.push_read_count || 0),
+      pushLastName: t.push_last_name || '',
       activeVisitCount: Number(t.active_visit_count || 0),
       chatEligible: !!t.chat_eligible,
       scheduleMatch: t.schedule_match || null,
@@ -1656,13 +1657,13 @@ function teacherDetail(label, t) {
           <span class="tc-wage-subj">${escapeHtml(w.subjectName)}</span>
           <span class="tc-wage-amt">${_fmtWonShort(w.teacherWage)}<span class="dim"> · 부모 ${_fmtWonShort(w.parentCharge)}</span></span>
         </div>`).join('')}</div>` : ''}
-      ${(t.alimtalkCount > 0 || hasName) ? `<div class="tc-alimtalk">
-        <span class="tc-alimtalk-lbl">📨 알림톡</span>
-        <span class="tc-alimtalk-val">${t.alimtalkCount > 0 ? `${fmtRelativeTime(t.alimtalkLastSentAt)} · 누적 ${t.alimtalkCount}회` : '<span class="dim">미발송</span>'}</span>
+      ${hasName ? `<div class="tc-meta-row">
+        <span class="tc-meta-lbl">🔔 추천 PUSH</span>
+        <span class="tc-meta-val">${t.pushCount > 0 ? `${fmtRelativeTime(t.pushLastSentAt)} · 누적 ${t.pushCount}회<span class="dim"> · 읽음 ${t.pushReadCount}</span>` : '<span class="dim">미발송</span>'}</span>
       </div>` : ''}
-      ${hasName ? `<div class="tc-alimtalk">
-        <span class="tc-alimtalk-lbl">🏠 진행중 수업</span>
-        <span class="tc-alimtalk-val">${t.activeVisitCount > 0 ? `${t.activeVisitCount}건` : '<span class="dim">없음</span>'}</span>
+      ${hasName ? `<div class="tc-meta-row">
+        <span class="tc-meta-lbl">🏠 진행중 수업</span>
+        <span class="tc-meta-val">${t.activeVisitCount > 0 ? `${t.activeVisitCount}건` : '<span class="dim">없음</span>'}</span>
       </div>` : ''}
     </div>
     <div class="state-tag tone-${meta.tone}">${meta.label}</div>
