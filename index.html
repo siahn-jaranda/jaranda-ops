@@ -676,6 +676,9 @@ input, textarea, select { font-family: inherit; }
           <button class="btn btn-secondary btn-sm" onclick="resetDateFilter()">초기화</button>
         </div>
         <div class="pager" id="pager" title="5분마다 자동 새로고침">
+          <button class="seg-btn" id="pg-prev" onclick="gotoPage(state.page - 1)">‹</button>
+          <span class="pg-info"><span id="pg-current">1</span> / <span id="pg-total">1</span></span>
+          <button class="seg-btn" id="pg-next" onclick="gotoPage(state.page + 1)">›</button>
           <span class="pg-info" id="pg-info-text">—</span>
         </div>
         <div class="seg-group" id="layout-seg">
