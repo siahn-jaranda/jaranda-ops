@@ -1086,6 +1086,9 @@ function backendToApp(r) {
     reRecommend: !!r.reRecommend,
     // 처리 담당 — backend matching_ops_handler 테이블에서 batch 주입 (없으면 null)
     handler: r.handler || null,
+    // 메모 카운트 — matching_ops_memo 활성 row 집계. renderCardView가 "💬 메모 N건" 표시.
+    memoCount: r.memoCount || 0,
+    lastMemoAt: r.lastMemoAt || null,
   };
 }
 

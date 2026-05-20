@@ -18,6 +18,7 @@ from src.config import settings
 from src.db import get_replica
 from src.firestore_chat import find_chat_status, firestore_available
 from src.handler_store import get_handler_store, handler_store_available
+from src.memo_store import get_memo_store, memo_store_available
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 logger = logging.getLogger(__name__)
@@ -489,6 +490,7 @@ def _to_row(
     visit_counts_map: dict[str, int] | None = None,
     teacher_availability_map: dict[str, set[str]] | None = None,
     chat_room_map: dict[tuple[str, str], dict[str, Any]] | None = None,
+    memo_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
@@ -632,6 +634,9 @@ def _to_row(
         ],
         # 처리 담당 — matching_ops_handler 테이블에서 batch 주입
         "handler": handler,
+        # 메모 카운트 — matching_ops_memo 활성 row 집계. 카드에 "메모 N건" 표시.
+        "memoCount": int((memo_meta or {}).get("count") or 0),
+        "lastMemoAt": (memo_meta or {}).get("last_created_at"),
     }
 
 
@@ -752,6 +757,13 @@ async def list_applications(
         if pairs:
             chat_room_map = await find_chat_status(list(set(pairs)))
 
+    memo_meta_map: dict[str, dict[str, Any]] = {}
+    if memo_store_available():
+        try:
+            memo_meta_map = await get_memo_store().counts_by_sids(rec_sids)
+        except Exception:
+            logger.exception("memo batch fetch failed (graceful)")
+
     return {
         "count": len(rows),
         "filter": {"from": date_from, "to": date_to, "limit": limit, "offset": offset},
@@ -770,6 +782,7 @@ async def list_applications(
                 visit_counts_map,
                 teacher_availability_map,
                 chat_room_map,
+                memo_meta_map.get(str(r.get("sid"))),
             )
             for r in rows
         ],
@@ -860,6 +873,14 @@ async def get_application(sid: str) -> dict[str, Any]:
         pairs = [(str(parent_sid), str(ts)) for ts in teacher_sids]
         chat_room_map = await find_chat_status(pairs)
 
+    memo_meta: dict[str, Any] | None = None
+    if memo_store_available():
+        try:
+            mm = await get_memo_store().counts_by_sids([sid])
+            memo_meta = mm.get(sid)
+        except Exception:
+            logger.exception("memo count fetch failed sid=%s (graceful)", sid)
+
     return _to_row(
         rec,
         subject_map,
@@ -873,6 +894,7 @@ async def get_application(sid: str) -> dict[str, Any]:
         visit_counts_map,
         teacher_availability_map,
         chat_room_map,
+        memo_meta,
     )
 
 
