@@ -717,21 +717,22 @@ async def list_applications(
                 if tok.isdigit():
                     all_subject_ids.add(int(tok))
 
-        # 3단계: teacher_sids에 의존하는 쿼리 5개 병렬
+        # 3단계: teacher_sids에 의존하는 쿼리 4개 병렬
+        # push_map은 fcm_send_history 인덱스 미비로 list_applications에서 30~115초
+        # 폭증 → 상세 패널(get_application)에서만 lazy load.
         _t3 = time.perf_counter()
         (
             feedback_map,
             teacher_wages_map,
-            push_map,
             visit_counts_map,
             teacher_availability_map,
         ) = await asyncio.gather(
             _timed("feedback", replica.get_teacher_feedback_summary(teacher_sids)),
             _timed("teacher_wages", replica.list_teacher_subject_wages(teacher_sids, sorted(all_subject_ids))),
-            _timed("push", replica.list_push_to_teachers(rec_sids, teacher_sids)),
             _timed("visit_counts", replica.list_active_visit_counts(teacher_sids)),
             _timed("teacher_avail", replica.list_teacher_weekly_availability(teacher_sids)),
         )
+        push_map: dict[tuple[str, str], dict[str, Any]] = {}
         logger.info(
             "list_apps_stage stage=3 ms=%.0f rec_sids=%d teacher_sids=%d total_ms=%.0f",
             (time.perf_counter() - _t3) * 1000,
