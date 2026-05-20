@@ -453,12 +453,13 @@ class JarandaReplica:
         fcm_send_history (FCM PUSH 발송 이력). 신청서 선생님 추천 PUSH만 집계:
           - app_type='TEACHER'
           - push_name LIKE '선생님_수업요청%' (일반 + 플래너)
-          - deep_link = 'recommend/normal?requestFormId=<rec_sid>' 정확 일치
-        receiver_id 인덱스(MUL) 활용 + sent_at 30일 윈도우로 풀스캔 방지.
+          - deep_link LIKE 'recommend/normal?requestFormId=%' + 후처리 set 필터
+        receiver_id 인덱스(MUL)로 range scan. deep_link IN(N)으로 인한 row × N
+        텍스트 비교 폭주를 회피 (rec_sids 수백 개에서 응답 1~2분 폭증 → ~수초).
         """
         if not recommendation_sids or not teacher_sids:
             return {}
-        deep_links = [f"recommend/normal?requestFormId={s}" for s in recommendation_sids]
+        rec_set = set(recommendation_sids)
         query = text(
             """
             SELECT
@@ -472,22 +473,21 @@ class JarandaReplica:
             WHERE app_type = 'TEACHER'
               AND push_name LIKE '선생님_수업요청%'
               AND receiver_id IN :tsids
-              AND deep_link IN :links
+              AND deep_link LIKE 'recommend/normal?requestFormId=%'
               AND sent_at > NOW() - INTERVAL 30 DAY
             GROUP BY deep_link, receiver_id
             """
         ).bindparams(
             bindparam("tsids", expanding=True),
-            bindparam("links", expanding=True),
         )
         result: dict[tuple[str, str], dict[str, Any]] = {}
         async with self._session_factory() as session:
-            rows = await session.execute(
-                query, {"tsids": teacher_sids, "links": deep_links}
-            )
+            rows = await session.execute(query, {"tsids": teacher_sids})
             for row in rows:
                 m = row._mapping
                 rec_sid = str(m["deep_link"]).replace("recommend/normal?requestFormId=", "")
+                if rec_sid not in rec_set:
+                    continue
                 key = (rec_sid, str(m["teacher_account_sid"]))
                 result[key] = {
                     "count": int(m["cnt"] or 0),
