@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.config import settings
 from src.db import get_replica
+from src.firestore_chat import find_chat_status, firestore_available
 from src.handler_store import get_handler_store, handler_store_available
 from src.memo_store import get_memo_store, memo_store_available
 
@@ -369,14 +371,27 @@ def _schedule_match(requested_days: list[str], available_days: set[str] | None) 
     }
 
 
+def _derive_chat_status(eligible: bool, chat_room: dict[str, Any] | None) -> str | None:
+    """채팅 상태 3분류 + None.
+
+    Firestore 미사용 시(chat_room=None)는 eligible 만으로 before/None 판단.
+    """
+    if chat_room and chat_room.get("status"):
+        return str(chat_room["status"])  # "active" | "ended"
+    if eligible:
+        return "before"
+    return None
+
+
 def _to_frontend_teacher(
     r: dict[str, Any],
     feedback: dict[str, Any] | None = None,
     teacher_wages: dict[int, dict[str, int]] | None = None,
     subjects: list[dict[str, Any]] | None = None,
-    alimtalk: dict[str, Any] | None = None,
+    push: dict[str, Any] | None = None,
     active_visit_count: int | None = None,
     schedule_match: dict[str, Any] | None = None,
+    chat_room: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """recommendation_teachers row → 프론트 mapTeacher가 기대하는 형태.
 
@@ -439,15 +454,26 @@ def _to_frontend_teacher(
         "recommend_count": int(fb.get("recommend_count") or 0),
         "recommend_rate": fb.get("recommend_rate"),  # None | float (0~100)
         "wage_by_subject": wage_by_subject,
-        "alimtalk_count": int((alimtalk or {}).get("count") or 0),
-        "alimtalk_last_sent_at": (alimtalk or {}).get("last_sent_at").isoformat() if alimtalk and alimtalk.get("last_sent_at") else None,
-        "alimtalk_last_template": (alimtalk or {}).get("last_template") or "",
+        # PUSH 발송 이력 — fcm_send_history (선생님 수업요청 PUSH).
+        # 알림톡(recommendation_alimtalk_send_history)은 부모/선생 혼재이고 운영 행동과 약간 거리.
+        # PUSH가 매칭 액션에 더 직접적이라 운영 요청으로 교체 (2026-05-19).
+        "push_count": int((push or {}).get("count") or 0),
+        "push_last_sent_at": (push or {}).get("last_sent_at").isoformat() if push and push.get("last_sent_at") else None,
+        "push_read_count": int((push or {}).get("read_count") or 0),
+        "push_last_name": (push or {}).get("last_push_name") or "",
         "active_visit_count": int(active_visit_count or 0),
         # 부모님 ↔ 선생님 채팅 자격: 자란다 정책상 recommendation_teachers.accepted=1 이면
         # 부모님이 채팅을 시작할 수 있음 (실제 채팅방은 Firestore에 별도 저장).
         # applied=1 은 accepted를 함의 (지원하려면 먼저 수락 필요).
         "chat_eligible": applied or accepted,
         "schedule_match": schedule_match,  # None | {status, requestedDays, availableDays, matchedDays}
+        # 채팅 상태 3분류 (운영팀 요구 — 채팅 전/중/종료):
+        #  - "active" : 양쪽 채팅방 존재 + 양쪽 모두 deactivatedAt=null
+        #  - "ended"  : 어느 한쪽이라도 deactivatedAt 있음 또는 한쪽 document만 존재
+        #  - "before" : Firestore에 채팅방 미존재 + chat_eligible(accepted=1)
+        #  - null     : 자격 없음 (미노출)
+        "chat_status": _derive_chat_status(applied or accepted, chat_room),
+        "chat_last_message_at": (chat_room or {}).get("last_message_at"),
     }
 
 
@@ -460,9 +486,10 @@ def _to_row(
     feedback_map: dict[str, dict[str, Any]] | None = None,
     wage_range_types: list[str] | None = None,
     teacher_wages_map: dict[str, dict[int, dict[str, int]]] | None = None,
-    alimtalk_map: dict[tuple[str, str], dict[str, Any]] | None = None,
+    push_map: dict[tuple[str, str], dict[str, Any]] | None = None,
     visit_counts_map: dict[str, int] | None = None,
     teacher_availability_map: dict[str, set[str]] | None = None,
+    chat_room_map: dict[tuple[str, str], dict[str, Any]] | None = None,
     memo_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
@@ -593,11 +620,14 @@ def _to_row(
                 (feedback_map or {}).get(t.get("teacher_account_sid")),
                 (teacher_wages_map or {}).get(str(t.get("teacher_account_sid") or "")),
                 subjects,
-                (alimtalk_map or {}).get((str(rec["sid"]), str(t.get("teacher_account_sid") or ""))),
+                (push_map or {}).get((str(rec["sid"]), str(t.get("teacher_account_sid") or ""))),
                 (visit_counts_map or {}).get(str(t.get("teacher_account_sid") or "")),
                 _schedule_match(
                     requested_days,
                     (teacher_availability_map or {}).get(str(t.get("teacher_account_sid") or "")),
+                ),
+                (chat_room_map or {}).get(
+                    (str(rec.get("parent_account_sid") or ""), str(t.get("teacher_account_sid") or ""))
                 ),
             )
             for t in (teachers or [])
@@ -630,23 +660,51 @@ async def list_applications(
 ) -> dict[str, Any]:
     date_from = _validate_date("from", date_from)
     date_to = _validate_date("to", date_to)
+    import time
     replica = get_replica()
+    _t0 = time.perf_counter()
+
+    async def _timed(name: str, coro):
+        t = time.perf_counter()
+        result = await coro
+        dt = (time.perf_counter() - t) * 1000
+        logger.info("list_apps_q name=%s ms=%.0f", name, dt)
+        return result
+
     try:
-        rows = await replica.list_recent_recommendations(
+        # 1단계: rows (단독)
+        rows = await _timed("rows", replica.list_recent_recommendations(
             limit=limit, offset=offset, date_from=date_from, date_to=date_to
-        )
+        ))
         parent_sids = list({r["parent_account_sid"] for r in rows if r.get("parent_account_sid")})
-        history_map = await replica.get_parent_history_counts(parent_sids)
         rec_sids = [str(r["sid"]) for r in rows if r.get("sid") is not None]
-        teachers_map = await replica.list_recommendation_teachers_batch(rec_sids)
+
+        # 2단계: rows에 의존하는 쿼리 + teachers_map + subject_map + handler_map 병렬
+        async def _handler_fetch() -> dict[str, dict[str, Any]]:
+            if not handler_store_available():
+                return {}
+            try:
+                return await get_handler_store().list_by_sids(rec_sids)
+            except Exception:
+                logger.exception("handler batch fetch failed (graceful)")
+                return {}
+
+        _t2 = time.perf_counter()
+        history_map, teachers_map, wage_range_map, subject_map, handler_map = await asyncio.gather(
+            _timed("history", replica.get_parent_history_counts(parent_sids)),
+            _timed("teachers", replica.list_recommendation_teachers_batch(rec_sids)),
+            _timed("wage_range", replica.list_wage_ranges(rec_sids)),
+            _timed("subject_map", get_subject_map()),
+            _timed("handler", _handler_fetch()),
+        )
+        logger.info("list_apps_stage stage=2 ms=%.0f", (time.perf_counter() - _t2) * 1000)
+
         teacher_sids = list({
             str(t.get("teacher_account_sid"))
             for ts in teachers_map.values()
             for t in ts
             if t.get("teacher_account_sid")
         })
-        feedback_map = await replica.get_teacher_feedback_summary(teacher_sids)
-        wage_range_map = await replica.list_wage_ranges(rec_sids)
 
         # 화면에 노출되는 모든 신청서의 teacher_specialties를 합쳐 batch 시급 조회
         all_subject_ids: set[int] = set()
@@ -658,24 +716,46 @@ async def list_applications(
                 tok = tok.strip()
                 if tok.isdigit():
                     all_subject_ids.add(int(tok))
-        teacher_wages_map = await replica.list_teacher_subject_wages(
-            teacher_sids, sorted(all_subject_ids)
+
+        # 3단계: teacher_sids에 의존하는 쿼리 5개 병렬
+        _t3 = time.perf_counter()
+        (
+            feedback_map,
+            teacher_wages_map,
+            push_map,
+            visit_counts_map,
+            teacher_availability_map,
+        ) = await asyncio.gather(
+            _timed("feedback", replica.get_teacher_feedback_summary(teacher_sids)),
+            _timed("teacher_wages", replica.list_teacher_subject_wages(teacher_sids, sorted(all_subject_ids))),
+            _timed("push", replica.list_push_to_teachers(rec_sids, teacher_sids)),
+            _timed("visit_counts", replica.list_active_visit_counts(teacher_sids)),
+            _timed("teacher_avail", replica.list_teacher_weekly_availability(teacher_sids)),
         )
-        alimtalk_map = await replica.list_alimtalk_to_teachers(rec_sids, teacher_sids)
-        visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
-        teacher_availability_map = await replica.list_teacher_weekly_availability(teacher_sids)
+        logger.info(
+            "list_apps_stage stage=3 ms=%.0f rec_sids=%d teacher_sids=%d total_ms=%.0f",
+            (time.perf_counter() - _t3) * 1000,
+            len(rec_sids), len(teacher_sids),
+            (time.perf_counter() - _t0) * 1000,
+        )
     except Exception:
         logger.exception("list_applications failed")
         raise HTTPException(status_code=503, detail="replica query failed")
 
-    subject_map = await get_subject_map()
-
-    handler_map: dict[str, dict[str, Any]] = {}
-    if handler_store_available():
-        try:
-            handler_map = await get_handler_store().list_by_sids(rec_sids)
-        except Exception:
-            logger.exception("handler batch fetch failed (graceful)")
+    # Firestore 채팅방 batch (firestore_enabled=False면 빈 dict). 부모님-선생님 페어 단위.
+    chat_room_map: dict[tuple[str, str], dict[str, Any]] = {}
+    if firestore_available():
+        pairs: list[tuple[str, str]] = []
+        for r in rows:
+            parent_sid = r.get("parent_account_sid")
+            if not parent_sid:
+                continue
+            for t in teachers_map.get(str(r.get("sid")), []) or []:
+                tsid = t.get("teacher_account_sid")
+                if tsid:
+                    pairs.append((str(parent_sid), str(tsid)))
+        if pairs:
+            chat_room_map = await find_chat_status(list(set(pairs)))
 
     memo_meta_map: dict[str, dict[str, Any]] = {}
     if memo_store_available():
@@ -698,9 +778,10 @@ async def list_applications(
                 feedback_map,
                 wage_range_map.get(str(r.get("sid"))),
                 teacher_wages_map,
-                alimtalk_map,
+                push_map,
                 visit_counts_map,
                 teacher_availability_map,
+                chat_room_map,
                 memo_meta_map.get(str(r.get("sid"))),
             )
             for r in rows
@@ -762,13 +843,13 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
 
-    alimtalk_map: dict[tuple[str, str], dict[str, Any]] = {}
+    push_map: dict[tuple[str, str], dict[str, Any]] = {}
     visit_counts_map: dict[str, int] = {}
     if teacher_sids:
         try:
-            alimtalk_map = await replica.list_alimtalk_to_teachers([sid], teacher_sids)
+            push_map = await replica.list_push_to_teachers([sid], teacher_sids)
         except Exception:
-            logger.exception("alimtalk fetch failed sid=%s (graceful)", sid)
+            logger.exception("push fetch failed sid=%s (graceful)", sid)
         try:
             visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
         except Exception:
@@ -787,6 +868,11 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("handler fetch failed sid=%s (graceful)", sid)
 
+    chat_room_map: dict[tuple[str, str], dict[str, Any]] = {}
+    if firestore_available() and parent_sid and teacher_sids:
+        pairs = [(str(parent_sid), str(ts)) for ts in teacher_sids]
+        chat_room_map = await find_chat_status(pairs)
+
     memo_meta: dict[str, Any] | None = None
     if memo_store_available():
         try:
@@ -804,9 +890,10 @@ async def get_application(sid: str) -> dict[str, Any]:
         feedback_map,
         wage_range_types,
         teacher_wages_map,
-        alimtalk_map,
+        push_map,
         visit_counts_map,
         teacher_availability_map,
+        chat_room_map,
         memo_meta,
     )
 
@@ -850,13 +937,13 @@ async def list_teachers(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("teacher wages fetch failed sid=%s (graceful)", sid)
 
-    alimtalk_map: dict[tuple[str, str], dict[str, Any]] = {}
+    push_map: dict[tuple[str, str], dict[str, Any]] = {}
     visit_counts_map: dict[str, int] = {}
     if teacher_sids:
         try:
-            alimtalk_map = await replica.list_alimtalk_to_teachers([sid], teacher_sids)
+            push_map = await replica.list_push_to_teachers([sid], teacher_sids)
         except Exception:
-            logger.exception("alimtalk fetch failed sid=%s (graceful)", sid)
+            logger.exception("push fetch failed sid=%s (graceful)", sid)
         try:
             visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
         except Exception:
@@ -869,6 +956,12 @@ async def list_teachers(sid: str) -> dict[str, Any]:
             logger.exception("teacher availability fetch failed sid=%s (graceful)", sid)
     requested_days = _parse_requested_days(rec) if rec else []
 
+    parent_sid_for_chat = (rec or {}).get("parent_account_sid")
+    chat_room_map: dict[tuple[str, str], dict[str, Any]] = {}
+    if firestore_available() and parent_sid_for_chat and teacher_sids:
+        pairs = [(str(parent_sid_for_chat), str(ts)) for ts in teacher_sids]
+        chat_room_map = await find_chat_status(pairs)
+
     return {
         "sid": sid,
         "teachers": [
@@ -877,11 +970,14 @@ async def list_teachers(sid: str) -> dict[str, Any]:
                 feedback_map.get(r.get("teacher_account_sid")),
                 teacher_wages_map.get(str(r.get("teacher_account_sid") or "")),
                 subjects,
-                alimtalk_map.get((sid, str(r.get("teacher_account_sid") or ""))),
+                push_map.get((sid, str(r.get("teacher_account_sid") or ""))),
                 visit_counts_map.get(str(r.get("teacher_account_sid") or "")),
                 _schedule_match(
                     requested_days,
                     teacher_availability_map.get(str(r.get("teacher_account_sid") or "")),
+                ),
+                chat_room_map.get(
+                    (str(parent_sid_for_chat or ""), str(r.get("teacher_account_sid") or ""))
                 ),
             )
             for r in rows

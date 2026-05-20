@@ -10,6 +10,7 @@ import logging
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from src import auth
 from src.config import settings
@@ -23,6 +24,9 @@ app = FastAPI(
     description="자란다 매칭 운영 대시보드 백엔드 (read-only)",
     version="0.1.0",
 )
+
+# /api/applications 응답이 1000건 기준 ~5MB. gzip으로 ~10x 단축 → network 시간 큰 절감.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.add_middleware(
     CORSMiddleware,

@@ -301,8 +301,10 @@ input, textarea, select { font-family: inherit; }
   padding: 2px 6px; border-radius: 5px;
   font-size: 10.5px; font-weight: 700; letter-spacing: -0.01em;
   line-height: 1; white-space: nowrap;
-  background: #EEF2FF; color: #1B4FB8;
 }
+.chat-badge.chat-before { background: #EEF2FF; color: #1B4FB8; }   /* 채팅 전 - 파랑 */
+.chat-badge.chat-active { background: #DCFCE7; color: #166534; }   /* 채팅 중 - 초록 */
+.chat-badge.chat-ended  { background: #F3F4F6; color: #6B7280; }   /* 채팅 종료 - 회색 */
 .sched-badge {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 6px; border-radius: 5px;
@@ -433,13 +435,13 @@ input, textarea, select { font-family: inherit; }
 .teachers-rest { display: flex; flex-direction: column; gap: 6px; }
 .muted-count { color: #9CA3AF; font-size: 11.5px; font-weight: 500; margin-left: 4px; }
 .kv .v .dim { color: #9CA3AF; font-weight: 500; margin-left: 4px; }
-.teacher-card .tc-alimtalk {
+.teacher-card .tc-meta-row {
   display: flex; justify-content: space-between; align-items: baseline;
   margin-top: 6px; font-size: 11.5px;
 }
-.teacher-card .tc-alimtalk-lbl { color: #6B7280; font-weight: 600; }
-.teacher-card .tc-alimtalk-val { color: #1E2530; font-weight: 600; font-variant-numeric: tabular-nums; }
-.teacher-card .tc-alimtalk-val .dim { color: #9CA3AF; font-weight: 500; }
+.teacher-card .tc-meta-lbl { color: #6B7280; font-weight: 600; }
+.teacher-card .tc-meta-val { color: #1E2530; font-weight: 600; font-variant-numeric: tabular-nums; }
+.teacher-card .tc-meta-val .dim { color: #9CA3AF; font-weight: 500; }
 .teacher-card .body { flex: 1; min-width: 0; }
 .teacher-card .row1 { display: flex; align-items: center; gap: 6px; }
 .teacher-card .row1 .lbl { font-size: 11px; font-weight: 700; color: #6B7280; letter-spacing: 0.04em; }
@@ -676,6 +678,9 @@ input, textarea, select { font-family: inherit; }
           <button class="btn btn-secondary btn-sm" onclick="resetDateFilter()">초기화</button>
         </div>
         <div class="pager" id="pager" title="5분마다 자동 새로고침">
+          <button class="seg-btn" id="pg-prev" onclick="gotoPage(state.page - 1)">‹</button>
+          <span class="pg-info"><span id="pg-current">1</span> / <span id="pg-total">1</span></span>
+          <button class="seg-btn" id="pg-next" onclick="gotoPage(state.page + 1)">›</button>
           <span class="pg-info" id="pg-info-text">—</span>
         </div>
         <div class="seg-group" id="layout-seg">
@@ -814,9 +819,10 @@ let APPS = [];
 const ASSIGNEES = ['신진섭','김지윤','노태효','김성환','이승석','강구슬'];
 
 // ====== STATE ======
-// 페이지네이션 제거 — 7일 윈도우 신청서를 한 번에 fetch.
+// fetch는 1 batch에 1000건 (7일 윈도우 ≈ 566건 한 번에).
+// 화면 렌더는 페이지 15건씩 — 카드 1000개 일괄 DOM 생성 시 5분+ lock 발생.
 // 5분마다 자동 새로고침. 사용자가 보고 있는 신청서는 selectedId로 유지.
-const PAGE_SIZE = 1000;
+const PAGE_SIZE = 15;
 const BATCH_SIZE = 1000;
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 let _autoRefreshTimer = null;
@@ -1006,11 +1012,13 @@ function backendToApp(r) {
       university: t.university || '',
       major: t.major || '',
       wageBySubject: Array.isArray(t.wage_by_subject) ? t.wage_by_subject : [],
-      alimtalkCount: Number(t.alimtalk_count || 0),
-      alimtalkLastSentAt: t.alimtalk_last_sent_at || null,
-      alimtalkLastTemplate: t.alimtalk_last_template || '',
+      pushCount: Number(t.push_count || 0),
+      pushLastSentAt: t.push_last_sent_at || null,
+      pushReadCount: Number(t.push_read_count || 0),
+      pushLastName: t.push_last_name || '',
       activeVisitCount: Number(t.active_visit_count || 0),
-      chatEligible: !!t.chat_eligible,
+      chatStatus: t.chat_status || null,                // "before" | "active" | "ended" | null
+      chatLastMessageAt: t.chat_last_message_at || null,
       scheduleMatch: t.schedule_match || null,
       accepted,
     };
@@ -1129,6 +1137,7 @@ async function _fetchNextBatch() {
   }
 }
 
+let _loadingSession = 0;
 async function loadLiveData(force, preserveSelection) {
   if (!authToken) { showGate(); return; }
   const prevSelectedId = preserveSelection ? state.selectedId : null;
@@ -1139,16 +1148,28 @@ async function loadLiveData(force, preserveSelection) {
     state.hasMore = true;
     state.page = 1;
   }
+  // 진행 중인 다른 session 무효화 — 자동 새로고침이 중간에 끼어들면 직전 fetch는 멈춤
+  const session = ++_loadingSession;
   // 7일 윈도우 전체를 한 번에 fetch. backend 한도 5000, 실데이터 일반 ~600.
+  // 각 batch 받자마자 화면 표시 (전체 끝까지 기다리지 않음).
   while (state.hasMore) {
     const ok = await _fetchNextBatch();
+    if (session !== _loadingSession) return;  // 새 session 시작됐으면 abort
     if (!ok) break;
+    if (APPS_ALL.length > 0) {
+      APPS = APPS_ALL;
+      if (state.selectedId == null && _currentPageApps().length > 0) {
+        state.selectedId = _currentPageApps()[0].id;
+      }
+      setDataSource('live');
+      render();
+    }
   }
   if (APPS_ALL.length > 0) {
     APPS = APPS_ALL;
     if (prevSelectedId && APPS_ALL.some(a => a.id === prevSelectedId)) {
       state.selectedId = prevSelectedId;
-    } else {
+    } else if (state.selectedId == null) {
       state.selectedId = _currentPageApps()[0]?.id || null;
     }
     setDataSource('live');
@@ -1182,6 +1203,8 @@ function startAutoRefresh() {
     if (!authToken) return;
     if (state.tab !== 'matching') return;
     if (document.hidden) return;
+    // 이미 fetch 진행 중이면 skip (7일치 580+건 fetch가 5분 가까이 걸려 자동 갱신과 겹침)
+    if (state.loading) return;
     loadLiveData(true, true);
   }, AUTO_REFRESH_MS);
 }
@@ -1664,6 +1687,28 @@ function _scheduleBadge(sm) {
   return `<span class="sched-badge sched-unknown" title="선생님 가능 시간 미설정">⏰ 시간 미설정</span>`;
 }
 
+// 채팅 상태 3분류 배지 (chat_status):
+//   "before" → 채팅 전 (자격만, 파랑)
+//   "active" → 채팅 중 (양쪽 채팅방 정상, 초록)
+//   "ended"  → 채팅 종료 (어느 한쪽이라도 나감, 회색)
+//   null     → 미노출
+function _chatBadge(t) {
+  const s = t.chatStatus;
+  if (!s) return '';
+  if (s === 'before') {
+    return `<span class="chat-badge sm chat-before" title="선생님 수락 완료 — 아직 채팅 시작 안 함">💬 채팅 전</span>`;
+  }
+  if (s === 'active') {
+    const lastMsg = t.chatLastMessageAt ? `마지막 메시지 ${fmtRelativeTime(t.chatLastMessageAt)}` : '메시지 없음';
+    return `<span class="chat-badge sm chat-active" title="${lastMsg}">💬 채팅 중</span>`;
+  }
+  if (s === 'ended') {
+    const lastMsg = t.chatLastMessageAt ? `마지막 메시지 ${fmtRelativeTime(t.chatLastMessageAt)}` : '메시지 없음';
+    return `<span class="chat-badge sm chat-ended" title="부모님 또는 선생님이 채팅방 나감 · ${lastMsg}">💬 채팅 종료</span>`;
+  }
+  return '';
+}
+
 function teacherDetail(label, t) {
   const meta = REC_STATE_META[t.stateKey] || REC_STATE_META.pending;
   const hasName = t.name && t.name !== '—';
@@ -1681,7 +1726,7 @@ function teacherDetail(label, t) {
       <div class="row1">
         <span class="lbl">${label}</span>
         ${hasName ? `<span class="viewed-badge sm ${t.viewed?'viewed-yes':'viewed-no'}">${eyeIcon(t.viewed, 10)}${t.viewed?'부모님 열람':'미열람'}</span>` : ''}
-        ${hasName && t.chatEligible ? `<span class="chat-badge sm" title="자란다 정책: 선생님이 수락(accepted)하면 부모님이 채팅 시작 가능 — 실제 채팅방은 Firestore에 별도 저장">💬 채팅 가능</span>` : ''}
+        ${hasName ? _chatBadge(t) : ''}
         ${hasName ? _scheduleBadge(t.scheduleMatch) : ''}
       </div>
       <div class="nm ${hasName?'':'empty'}">${hasName ? t.name : '후보 없음'}</div>
@@ -1714,13 +1759,13 @@ function teacherDetail(label, t) {
           <span class="tc-wage-subj">${escapeHtml(w.subjectName)}</span>
           <span class="tc-wage-amt">${_fmtWonShort(w.teacherWage)}<span class="dim"> · 부모 ${_fmtWonShort(w.parentCharge)}</span></span>
         </div>`).join('')}</div>` : ''}
-      ${(t.alimtalkCount > 0 || hasName) ? `<div class="tc-alimtalk">
-        <span class="tc-alimtalk-lbl">📨 알림톡</span>
-        <span class="tc-alimtalk-val">${t.alimtalkCount > 0 ? `${fmtRelativeTime(t.alimtalkLastSentAt)} · 누적 ${t.alimtalkCount}회` : '<span class="dim">미발송</span>'}</span>
+      ${hasName ? `<div class="tc-meta-row">
+        <span class="tc-meta-lbl">🔔 추천 PUSH</span>
+        <span class="tc-meta-val">${t.pushCount > 0 ? `${fmtRelativeTime(t.pushLastSentAt)} · 누적 ${t.pushCount}회<span class="dim"> · 읽음 ${t.pushReadCount}</span>` : '<span class="dim">미발송</span>'}</span>
       </div>` : ''}
-      ${hasName ? `<div class="tc-alimtalk">
-        <span class="tc-alimtalk-lbl">🏠 진행중 수업</span>
-        <span class="tc-alimtalk-val">${t.activeVisitCount > 0 ? `${t.activeVisitCount}건` : '<span class="dim">없음</span>'}</span>
+      ${hasName ? `<div class="tc-meta-row">
+        <span class="tc-meta-lbl">🏠 진행중 수업</span>
+        <span class="tc-meta-val">${t.activeVisitCount > 0 ? `${t.activeVisitCount}건` : '<span class="dim">없음</span>'}</span>
       </div>` : ''}
     </div>
     <div class="state-tag tone-${meta.tone}">${meta.label}</div>
