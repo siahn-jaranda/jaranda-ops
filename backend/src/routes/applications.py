@@ -98,6 +98,13 @@ _REGULARITY_MAP = {1: "1회 수업", 2: "정기", 3: "다회차"}
 
 # biweekly: kr.jaranda.common.model.enumeration.Biweekly  (1=WEEKLY, 2=BIWEEKLY)
 
+# DayOfWeek (schedule JSON possible_day_of_weeks) → 한글 1글자
+_DOW_KR = {
+    "MONDAY": "월", "TUESDAY": "화", "WEDNESDAY": "수", "THURSDAY": "목",
+    "FRIDAY": "금", "SATURDAY": "토", "SUNDAY": "일",
+}
+_DOW_ORDER = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]
+
 
 # kr.jaranda.domain.requestform.desiredcost.DesiredCost — recommendation_teacher_wage_range.wage_range_type
 # (label, teacher_min, teacher_max, parent_min, parent_max). MAX=100000은 사실상 상한 없음.
@@ -273,9 +280,8 @@ def _request_chips(rec: dict[str, Any], subjects: list[dict[str, Any]] | None = 
     if g in _GENDER_MAP:
         chips.append(f"{_GENDER_MAP[g]} 선생님 선호")
 
-    first = rec.get("requested_first_visit_schedule")
-    if first:
-        chips.append(f"첫방문 {first}")
+    # 첫방문 일시는 desiredSchedule로 별도 노출. requested_first_visit_schedule의
+    # 시간(08:00~22:00)은 시스템 기본값이라 칩으로 쓰지 않는다.
 
     chars = (rec.get("preferable_teacher_characteristics") or "").strip()
     if chars:
@@ -344,6 +350,114 @@ def _parse_requested_days(rec: dict[str, Any]) -> list[str]:
     if not isinstance(days, list):
         return []
     return [str(d).upper() for d in days if d]
+
+
+def _fmt_md(iso: str | None) -> str | None:
+    """'2026-05-27' → '5/27'. 형식 안 맞으면 None."""
+    if not iso or not isinstance(iso, str):
+        return None
+    parts = iso.split("-")
+    if len(parts) != 3:
+        return None
+    try:
+        return f"{int(parts[1])}/{int(parts[2])}"
+    except ValueError:
+        return None
+
+
+def _fmt_dates(isos: list[str]) -> str:
+    """['2026-06-22','2026-06-24'] → '6/22·24' (같은 달이면 월 생략)."""
+    out: list[str] = []
+    last_month: int | None = None
+    for iso in isos:
+        parts = str(iso).split("-")
+        if len(parts) != 3:
+            continue
+        try:
+            m, d = int(parts[1]), int(parts[2])
+        except ValueError:
+            continue
+        out.append(str(d) if m == last_month else f"{m}/{d}")
+        last_month = m
+    return "·".join(out)
+
+
+def _freq_label(rec: dict[str, Any]) -> str | None:
+    """정기/다회차일 때만 매주/격주 표기. 그 외 None."""
+    if rec.get("regularity") not in (2, 3):
+        return None
+    bw = rec.get("biweekly")
+    if bw == 1:
+        return "매주"
+    if bw == 2:
+        return "격주"
+    return None
+
+
+def _parse_desired_schedule(rec: dict[str, Any]) -> dict[str, Any] | None:
+    """recommendation.schedule JSON → 부모 희망 수업 일정.
+
+    requested_first_visit_schedule의 시간(예 '08:00~22:00')은 시스템 전체
+    가능시간 기본값이라 무의미 → schedule JSON의 possible_time_slots에서
+    실제 희망 시간대를 추출. frontend 카드/상세에서 조합해 표시한다.
+
+    반환 dict (정보 없으면 None):
+      firstVisit  '5/27' (M/D)         | None
+      freqLabel   '매주' | '격주'        | None
+      days        '월·수·금'            | None  (정기)
+      dates       '6/22·24·26'         | None  (다회차)
+      time        '19:00~20:00'        | None  (미지정)
+      durationMin 60                   | None
+    """
+    raw = rec.get("schedule")
+    if not raw:
+        return None
+    try:
+        data = raw if isinstance(raw, dict) else json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    # 시간대: 모든 slot의 times를 모아 최소 시작 ~ 최대 종료로 압축
+    starts: list[str] = []
+    ends: list[str] = []
+    for slot in (data.get("possible_time_slots") or []):
+        for t in (slot.get("times") or []):
+            if t.get("start_time"):
+                starts.append(t["start_time"])
+            if t.get("end_time"):
+                ends.append(t["end_time"])
+    time_str = f"{min(starts)}~{max(ends)}" if starts and ends else None
+
+    days_str: str | None = None
+    dates_str: str | None = None
+    if data.get("schedule_type") == "MULTIPLE_TIMES":
+        specific = [d for d in (data.get("specific_schedule") or []) if d]
+        dates_str = _fmt_dates(specific) or None
+        first_iso = specific[0] if specific else None
+    else:
+        dow = [str(d).upper() for d in (data.get("possible_day_of_weeks") or [])]
+        ordered = [d for d in _DOW_ORDER if d in dow]
+        days_str = "·".join(_DOW_KR[d] for d in ordered) or None
+        first_iso = data.get("start_date")
+
+    if not first_iso:
+        rfvs = rec.get("requested_first_visit_schedule") or ""
+        first_iso = rfvs.split(" ")[0] if rfvs else None
+
+    duration = data.get("duration_minutes")
+    result = {
+        "firstVisit": _fmt_md(first_iso),
+        "freqLabel": _freq_label(rec),
+        "days": days_str,
+        "dates": dates_str,
+        "time": time_str,
+        "durationMin": int(duration) if duration else None,
+    }
+    if not any([result["firstVisit"], result["days"], result["dates"], result["time"]]):
+        return None
+    return result
 
 
 def _schedule_match(requested_days: list[str], available_days: set[str] | None) -> dict[str, Any] | None:
@@ -606,6 +720,7 @@ def _to_row(
         "subjects": subjects,
         "wageRanges": wage_ranges,
         "requestChips": chips,
+        "desiredSchedule": _parse_desired_schedule(rec),
         "requestedTeacherName": rec.get("requested_teacher_name") or "",
         "isUrgent": bool(rec.get("is_urgent")),
         "autoConfirm": bool(rec.get("auto_confirm")),
