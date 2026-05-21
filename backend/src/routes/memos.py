@@ -3,8 +3,9 @@
 저장소: matching-ops 전용 Cloud SQL (PostgreSQL). vibe-cs DB와 분리.
 인증: require_auth_full → author_email + author_name 기록.
 
-메모 작성/삭제 시 application_snapshot도 함께 갱신 — "관리 신청서 목록" 탭이
-자란다 prod에서 신청서가 사라진 후에도 이력을 유지하기 위함.
+메모 작성 시 application_snapshot을 첫 1회만 INSERT(이후는 freeze) — 관리
+신청서 목록이 "메모를 처음 남긴 시점"의 신청서 컨텍스트를 보존하기 위함.
+잔여 메모 0건이 되면 snapshot 삭제.
 """
 from __future__ import annotations
 
@@ -41,11 +42,16 @@ def _normalize_sid(sid: str) -> str:
     return sid[4:] if sid.startswith("SID-") else sid
 
 
-async def _refresh_snapshot(raw_sid: str) -> None:
-    """자란다 replica에서 신청서 fetch → snapshot UPSERT. 실패는 graceful.
+async def _ensure_snapshot(raw_sid: str) -> None:
+    """첫 메모 작성 시점에만 snapshot INSERT — 이후는 freeze. 실패는 graceful.
 
-    신청서가 자란다 prod에서 삭제됐거나 replica 지연이면 fetch 실패 — 그 경우 기존
-    snapshot row 유지 (있으면). 메모 생성 자체는 성공시킨다.
+    관리 신청서 목록은 메모 작성 당시의 컨텍스트(시급·지역·요청사항·상태)를
+    유지해야 운영팀이 "왜 이 메모를 남겼는지" 추적 가능. 이전에는 매 메모마다
+    UPSERT로 덮어써서 두 번째 메모 작성 시점에 첫 메모 시점 정보가 사라지는
+    문제가 있었음 → ON CONFLICT DO NOTHING으로 첫 INSERT 한 번만 반영.
+
+    fetch 실패(자란다 prod에서 삭제 / replica 지연 등)는 graceful — 다음 메모
+    작성 시점에 다시 시도 후 INSERT.
     """
     if not snapshot_store_available():
         return
@@ -54,14 +60,16 @@ async def _refresh_snapshot(raw_sid: str) -> None:
         replica = get_replica()
         rec = await replica.get_recommendation(raw_sid)
         if rec is None:
-            logger.warning("snapshot refresh skipped — recommendation %s not in replica", raw_sid)
+            logger.warning("snapshot ensure skipped — recommendation %s not in replica", raw_sid)
             return
         subject_map = await get_subject_map()
         wage_types = (await replica.list_wage_ranges([raw_sid])).get(raw_sid, [])
         fields = to_snapshot_fields(rec, subject_map, wage_types)
-        await get_snapshot_store().upsert(raw_sid, fields)
+        inserted = await get_snapshot_store().insert_if_absent(raw_sid, fields)
+        if inserted:
+            logger.info("snapshot frozen at first memo sid=%s", raw_sid)
     except Exception:
-        logger.exception("snapshot upsert failed sid=%s (graceful)", raw_sid)
+        logger.exception("snapshot ensure failed sid=%s (graceful)", raw_sid)
 
 
 async def _maybe_drop_snapshot(raw_sid: str) -> None:
@@ -97,7 +105,7 @@ async def create_memo(
         raise HTTPException(status_code=503, detail="memo store query failed")
 
     # 메모 저장 성공 후 snapshot 최신화 (실패는 graceful)
-    await _refresh_snapshot(raw_sid)
+    await _ensure_snapshot(raw_sid)
     return memo
 
 
