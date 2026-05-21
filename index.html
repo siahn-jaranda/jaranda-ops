@@ -1017,7 +1017,7 @@ function backendToApp(r) {
       pushLastSentAt: t.push_last_sent_at || null,
       pushReadCount: Number(t.push_read_count || 0),
       pushLastName: t.push_last_name || '',
-      activeVisitCount: Number(t.active_visit_count || 0),
+      scheduledChildCount: Number(t.scheduled_child_count || 0),
       chatStatus: t.chat_status || null,                // "before" | "active" | "ended" | null
       chatLastMessageAt: t.chat_last_message_at || null,
       scheduleMatch: t.schedule_match || null,
@@ -1798,8 +1798,8 @@ function teacherDetail(label, t) {
         <span class="tc-meta-val">${t.pushCount > 0 ? `${fmtRelativeTime(t.pushLastSentAt)} · 누적 ${t.pushCount}회<span class="dim"> · 읽음 ${t.pushReadCount}</span>` : '<span class="dim">미발송</span>'}</span>
       </div>` : ''}
       ${hasName ? `<div class="tc-meta-row">
-        <span class="tc-meta-lbl">🏠 진행중 수업</span>
-        <span class="tc-meta-val">${t.activeVisitCount > 0 ? `${t.activeVisitCount}건` : '<span class="dim">없음</span>'}</span>
+        <span class="tc-meta-lbl">🏠 담당 아이</span>
+        <span class="tc-meta-val">${t.scheduledChildCount > 0 ? `${t.scheduledChildCount}명` : '<span class="dim">없음</span>'}</span>
       </div>` : ''}
     </div>
     <div class="state-tag tone-${meta.tone}">${meta.label}</div>

@@ -500,21 +500,25 @@ class JarandaReplica:
         return result
 
 
-    async def list_active_visit_counts(
+    async def list_scheduled_child_counts(
         self, teacher_sids: list[str]
     ) -> dict[str, int]:
-        """선생님별 진행중 정기 수업(visit) 개수. visit.status=10(진행중)만 카운트.
+        """선생님별 방문예정(visit_instance.status=1) 상태인 유니크 아이 수.
 
-        visit = 정기 계약 단위 (visit_instance = 1회 방문). 운영팀은 정기 계약 수가 더 의미 있음.
+        visit.status=10(진행중)은 종료 처리되지 않은 잔여 계약이 다수 섞여
+        실제 활성 수업을 과대 표시함(예: 진행중 206건인데 방문예정 0건). 따라서
+        '현재 선생님이 담당 중인 수업'은 앞으로 방문이 예정된(status=1) 건에서
+        유니크 아이(child_account_sid) 수로 집계한다.
         """
         if not teacher_sids:
             return {}
         query = text(
             """
-            SELECT matched_teacher_account_sid AS teacher_sid, COUNT(*) AS cnt
-            FROM visit
+            SELECT matched_teacher_account_sid AS teacher_sid,
+                   COUNT(DISTINCT child_account_sid) AS cnt
+            FROM visit_instance
             WHERE matched_teacher_account_sid IN :tsids
-              AND status = 10
+              AND status = 1
             GROUP BY matched_teacher_account_sid
             """
         ).bindparams(bindparam("tsids", expanding=True))
