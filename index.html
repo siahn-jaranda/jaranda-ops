@@ -205,6 +205,7 @@ input, textarea, select { font-family: inherit; }
 .id-child { font-size: 12.5px; color: #6B7280; }
 .id-body { font-size: 12.5px; color: #4B5563; line-height: 1.5; }
 .id-body .region { color: #6B7280; margin-top: 2px; }
+.id-body .sched-line { color: #3730A3; margin-top: 3px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .id-body .memo-meta { color: #1B4FB8; margin-top: 4px; font-weight: 600; font-size: 12px; }
 
 .col-rec {
@@ -1073,6 +1074,7 @@ function backendToApp(r) {
       prevLessons: r.lessonCount != null ? r.lessonCount : 0,
     },
     extras: r.requestChips || [],
+    desiredSchedule: r.desiredSchedule || null,
     subjects: r.subjects || [],
     wageRanges: r.wageRanges || [],
     result: r.result === '성공' ? '성공' : r.result === '실패' ? '실패' : null,
@@ -1434,6 +1436,7 @@ function renderCardView(apps) {
         </div>
         <div class="id-body">
           <div>${a.schedule}</div>
+          ${desiredScheduleCard(a.desiredSchedule) ? `<div class="sched-line">🗓 ${escapeHtml(desiredScheduleCard(a.desiredSchedule))}</div>` : ''}
           <div class="region">${a.region} · <a href="${consoleUrl(a.id)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="자란다 콘솔에서 열기">${a.id} ↗</a></div>
           ${a.memoCount ? `<div class="memo-meta">💬 메모 ${a.memoCount}건 · 최근 ${fmtRelativeTime(a.lastMemoAt)}</div>` : ''}
         </div>
@@ -1624,6 +1627,33 @@ function _wageRangeLine(wr) {
     <span class="v" style="font-variant-numeric:tabular-nums">${prange}${tLine}</span></div>`;
 }
 
+// 부모 희망 일정 텍스트. backend desiredSchedule object → 표시 문자열.
+// {firstVisit:'5/27', freqLabel:'매주', days:'월·수·금', dates:null, time:'19:00~20:00', durationMin:60}
+function _scheduleWhen(ds) {
+  // 요일(정기) 또는 날짜(다회차) + 시간 범위
+  return [ds.days || ds.dates || '', ds.time || ''].filter(Boolean).join(' ');
+}
+function desiredScheduleCard(ds) {
+  // 카드용 간결 한줄: "첫방문 5/27 · 월·수·금 19:00~20:00"
+  if (!ds) return '';
+  const parts = [];
+  if (ds.firstVisit) parts.push(`첫방문 ${ds.firstVisit}`);
+  const when = _scheduleWhen(ds);
+  if (when) parts.push(when);
+  return parts.join(' · ');
+}
+function desiredScheduleDetail(ds) {
+  // 상세용: "첫방문 5/27 · 매주 월·수·금 19:00~20:00 (60분)"
+  if (!ds) return '';
+  const parts = [];
+  if (ds.firstVisit) parts.push(`첫방문 ${ds.firstVisit}`);
+  const when = [ds.freqLabel || '', ds.days || ds.dates || '', ds.time || ''].filter(Boolean).join(' ');
+  let tail = when;
+  if (ds.durationMin) tail = `${tail} (${ds.durationMin}분)`.trim();
+  if (tail.trim()) parts.push(tail.trim());
+  return parts.join(' · ');
+}
+
 function subjectsWageBlock(app) {
   const subjects = app.subjects || [];
   const wrs = app.wageRanges || [];
@@ -1633,7 +1663,11 @@ function subjectsWageBlock(app) {
   const wageLine = wrs.length
     ? wrs.map(_wageRangeLine).join('')
     : `<div class="kv"><span class="k">희망 시급</span><span class="v" style="color:#9CA3AF">미지정</span></div>`;
-  return subjLine + wageLine;
+  const sched = desiredScheduleDetail(app.desiredSchedule);
+  const schedLine = sched
+    ? `<div class="kv"><span class="k">일정</span><span class="v">${escapeHtml(sched)}</span></div>`
+    : `<div class="kv"><span class="k">일정</span><span class="v" style="color:#9CA3AF">미지정</span></div>`;
+  return subjLine + wageLine + schedLine;
 }
 
 // 신청서별 "선생님 추천 더보기" 펼침 상태. application id → bool.
@@ -1809,6 +1843,11 @@ function renderDetailPanel(app) {
     <div class="dp-body">
 
       <div class="dp-section">
+        <div class="section-label">수업 과목 · 희망 시급</div>
+        ${subjectsWageBlock(app)}
+      </div>
+
+      <div class="dp-section">
         <div class="dp-section-head">
           <div class="section-label">선생님 추천 ${app.recommendation.totalCount > 0 ? `<span class="muted-count">· 요청 ${app.recommendation.totalCount}명</span>` : ''}</div>
           <div style="display:inline-flex;gap:6px;align-items:center">
@@ -1838,11 +1877,6 @@ function renderDetailPanel(app) {
         <div class="kv"><span class="k">이전 수업</span><span class="v">${app.history.prevLessons ?? 0}회</span></div>
         <div class="kv"><span class="k">지역</span><span class="v">${app.region || '—'}</span></div>
         <div class="kv"><span class="k">연락처</span><span class="v" style="font-variant-numeric:tabular-nums">${app.parentMobile || '—'}</span></div>
-      </div>
-
-      <div class="dp-section">
-        <div class="section-label">수업 과목 · 희망 시급</div>
-        ${subjectsWageBlock(app)}
       </div>
 
       <div class="dp-section">
