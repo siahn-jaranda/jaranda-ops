@@ -82,15 +82,17 @@ class SnapshotStore:
     async def aclose(self) -> None:
         await self._engine.dispose()
 
-    async def upsert(self, application_sid: str, fields: dict[str, Any]) -> None:
-        """INSERT … ON CONFLICT UPDATE. fields는 SNAPSHOT_FIELDS만 사용."""
+    def _clean_fields(self, fields: dict[str, Any]) -> dict[str, Any]:
         cleaned = {k: fields.get(k) for k in SNAPSHOT_FIELDS}
-        # JSONB 컬럼은 json.dumps로 직렬화 — 이미 str이면 그대로 (to_snapshot_fields가 dump 함)
         for jcol in ("request_chips", "subjects", "wage_ranges"):
             v = cleaned.get(jcol)
             if v is not None and not isinstance(v, str):
                 cleaned[jcol] = json.dumps(v, ensure_ascii=False)
+        return cleaned
 
+    async def upsert(self, application_sid: str, fields: dict[str, Any]) -> None:
+        """INSERT … ON CONFLICT UPDATE. fields는 SNAPSHOT_FIELDS만 사용."""
+        cleaned = self._clean_fields(fields)
         col_list = ", ".join(SNAPSHOT_FIELDS)
         param_list = ", ".join(f":{c}" for c in SNAPSHOT_FIELDS)
         update_list = ", ".join(f"{c} = EXCLUDED.{c}" for c in SNAPSHOT_FIELDS)
@@ -106,10 +108,36 @@ class SnapshotStore:
             """
         )
         params = {"application_sid": application_sid, **cleaned}
-        # JSONB 컬럼은 CAST 필요 — text 쿼리 시 자동 형변환되지만 명시적으로 dump해서 보냄
         async with self._session_factory() as session:
             await session.execute(query, params)
             await session.commit()
+
+    async def insert_if_absent(self, application_sid: str, fields: dict[str, Any]) -> bool:
+        """첫 메모 작성 시점의 신청서 상태를 freeze. 이미 row가 있으면 skip.
+
+        관리 신청서 목록은 "왜 그 메모를 남겼는지" 컨텍스트가 보존되어야 하므로
+        이후 메모 작성마다 신청서 현재 상태로 덮어쓰지 않는다. 첫 INSERT 시점
+        ─ 즉 운영팀이 처음 그 신청서를 들여다본 시점 ─ 의 시급/지역/요청사항 등이
+        고정되고, 이후 자란다 본서버에서 상태가 바뀌어도 snapshot은 유지된다.
+        리턴값: 새로 INSERT 됐는지(True) / 이미 있어서 스킵(False).
+        """
+        cleaned = self._clean_fields(fields)
+        col_list = ", ".join(SNAPSHOT_FIELDS)
+        param_list = ", ".join(f":{c}" for c in SNAPSHOT_FIELDS)
+        query = text(
+            f"""
+            INSERT INTO matching_ops_application_snapshot
+              (application_sid, {col_list})
+            VALUES
+              (:application_sid, {param_list})
+            ON CONFLICT (application_sid) DO NOTHING
+            """
+        )
+        params = {"application_sid": application_sid, **cleaned}
+        async with self._session_factory() as session:
+            result = await session.execute(query, params)
+            await session.commit()
+            return (result.rowcount or 0) > 0
 
     async def delete(self, application_sid: str) -> bool:
         query = text(
@@ -124,8 +152,8 @@ class SnapshotStore:
     async def list_managed(self, limit: int = 100) -> list[dict[str, Any]]:
         """관리 신청서 목록 — 메모 있는 sid 기준, 최근 메모 작성순.
 
-        memo가 driving table. snapshot은 LEFT JOIN — _refresh_snapshot이 실패한
-        과거 row(예: replica 윈도우 밖 신청서)도 메모만 있으면 목록에 노출.
+        memo가 driving table. snapshot은 LEFT JOIN — _ensure_snapshot이 첫 메모
+        시점에 fetch 실패했던 row(예: replica 윈도우 밖 신청서)도 메모만 있으면 노출.
         snapshot 누락 시 child_name 등은 NULL → _row_to_dict의 default가 채움.
         결과 row: (snapshot 필드 nullable) + memo_count + last_memo_at + handler.
         """
