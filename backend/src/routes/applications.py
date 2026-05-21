@@ -503,7 +503,7 @@ def _to_frontend_teacher(
     teacher_wages: dict[int, dict[str, int]] | None = None,
     subjects: list[dict[str, Any]] | None = None,
     push: dict[str, Any] | None = None,
-    active_visit_count: int | None = None,
+    scheduled_child_count: int | None = None,
     schedule_match: dict[str, Any] | None = None,
     chat_room: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -575,7 +575,7 @@ def _to_frontend_teacher(
         "push_last_sent_at": (push or {}).get("last_sent_at").isoformat() if push and push.get("last_sent_at") else None,
         "push_read_count": int((push or {}).get("read_count") or 0),
         "push_last_name": (push or {}).get("last_push_name") or "",
-        "active_visit_count": int(active_visit_count or 0),
+        "scheduled_child_count": int(scheduled_child_count or 0),
         # 부모님 ↔ 선생님 채팅 자격: 자란다 정책상 recommendation_teachers.accepted=1 이면
         # 부모님이 채팅을 시작할 수 있음 (실제 채팅방은 Firestore에 별도 저장).
         # applied=1 은 accepted를 함의 (지원하려면 먼저 수락 필요).
@@ -844,7 +844,7 @@ async def list_applications(
         ) = await asyncio.gather(
             _timed("feedback", replica.get_teacher_feedback_summary(teacher_sids)),
             _timed("teacher_wages", replica.list_teacher_subject_wages(teacher_sids, sorted(all_subject_ids))),
-            _timed("visit_counts", replica.list_active_visit_counts(teacher_sids)),
+            _timed("visit_counts", replica.list_scheduled_child_counts(teacher_sids)),
             _timed("teacher_avail", replica.list_teacher_weekly_availability(teacher_sids)),
         )
         push_map: dict[tuple[str, str], dict[str, Any]] = {}
@@ -967,7 +967,7 @@ async def get_application(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("push fetch failed sid=%s (graceful)", sid)
         try:
-            visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
+            visit_counts_map = await replica.list_scheduled_child_counts(teacher_sids)
         except Exception:
             logger.exception("visit count fetch failed sid=%s (graceful)", sid)
     teacher_availability_map: dict[str, set[str]] = {}
@@ -1061,7 +1061,7 @@ async def list_teachers(sid: str) -> dict[str, Any]:
         except Exception:
             logger.exception("push fetch failed sid=%s (graceful)", sid)
         try:
-            visit_counts_map = await replica.list_active_visit_counts(teacher_sids)
+            visit_counts_map = await replica.list_scheduled_child_counts(teacher_sids)
         except Exception:
             logger.exception("visit count fetch failed sid=%s (graceful)", sid)
     teacher_availability_map: dict[str, set[str]] = {}
