@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # LLM 인사이트 — Anthropic Claude Sonnet 4.6. 키 미설정 시 인사이트 API 비활성.
     anthropic_api_key: str = ""
     llm_model_id: str = "claude-sonnet-4-6"
+    # 지원0 추천·지역 회수 전용 모델. 인사이트(llm_model_id)와 분리해 LLM_MODEL_ID 오버라이드 영향 안 받음 (WELL2-100).
+    llm_recommend_model_id: str = "claude-sonnet-4-6"
     llm_max_tokens: int = 512
     llm_daily_limit: int = 200
 

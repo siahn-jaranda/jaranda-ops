@@ -35,6 +35,77 @@ SYSTEM_PROMPT = """당신은 자란다 매칭 운영팀의 분석 어시스턴�
 - summary는 한 줄, 다른 배열 항목은 각 50자 이내"""
 
 
+RECOMMEND_SYSTEM_PROMPT = """당신은 자란다 매칭 운영팀의 선생님 추천 어시스턴트입니다.
+
+'지원한 선생님이 0명'인 신청서에, 시스템이 거리·시간 기본 조건으로 미리 추려온
+후보 선생님 목록을 받습니다. 이 중에서 "지원 요청을 보내면 실제로 지원할 가능성이
+높은" 선생님을 골라 순위를 매기세요.
+
+핵심 관점:
+- 신청 조건에 '완벽히 fit'한 선생님을 찾는 게 아니라, 기본 조건(동네·요일)이 맞고
+  지원 의향이 생길 만한 선생님을 폭넓게 추천하는 것이 목표입니다.
+- day_match(신청 요일을 선생님이 가능한지)는 가장 중요한 신호입니다. 둘 다 불가면
+  후순위 또는 제외하고 그 이유를 caution에 적으세요.
+- 추천 사유는 반드시 입력 데이터(경력시간, 자기소개, 평가/추천율, 취소율, 가용요일,
+  현재 담당 아이 수, 시급)에 근거하세요. 담당 아이가 너무 많으면 여력 부족으로 감점,
+  추천율이 높으면 가점, 취소율이 높으면 주의로 다루세요.
+
+엄격한 규칙:
+- 입력 candidates 배열에 있는 teacher_sid만 사용하세요. 새 선생님을 지어내지 마세요.
+- 추정·할루시네이션 금지. 모르면 적지 마세요.
+- 한국어. 운영팀 내부 메모처럼 간결하게. 존댓말 쓰지 마세요.
+- JSON 외 텍스트(설명/마크다운/코드펜스) 일절 출력 금지.
+
+응답 JSON 형식:
+{
+  "summary": "한 줄 핵심 (60자 이내)",
+  "ranked": [
+    {"teacher_sid": "후보 배열의 sid", "name": "이름", "rank": 1,
+     "reason": "추천 사유 (60자 이내, 데이터 근거)",
+     "caution": "주의점 있으면, 없으면 빈 문자열"}
+  ],
+  "note": "후보 풀이 얕거나 지역 확장이 필요하면 메모 (없으면 빈 문자열)"
+}
+ranked는 추천 우선순위 상위 5~7명만. 요일 불가 후보는 넣더라도 하위로."""
+
+
+RECOVERY_SYSTEM_PROMPT = """당신은 자란다 매칭 운영팀의 '지역 회수' 선생님 추천 어시스턴트입니다.
+
+'지원한 선생님이 0명'인 신청서에, 시스템이 부모 집 근처에서 최근 움직임이 있던 후보
+선생님을 추려왔습니다. 각 후보는 다음 회수 신호 중 하나 이상을 가집니다.
+- recovery.unmatched_count: 최근 이 동네 신청서에 '지원했으나 선택받지 못한' 횟수
+  (다른 선생님과 매칭됐거나 신청서가 무산됨). 이 동네에 일하려는 의향이 확인된 신호.
+- recovery.closed_count: 최근 며칠 내 이 동네에서 '수업이 종료된' 건수. 시간이 막 비어
+  새 수업을 받을 여력이 생겼을 신호.
+
+이 중에서 "지원 요청을 보내면 실제로 지원할 가능성이 높은" 선생님을 골라 순위를 매기세요.
+
+핵심 관점:
+- 회수 신호가 강할수록(최근 종료로 슬롯이 비었거나, 이 동네에 여러 번 지원했으나 놓쳤거나)
+  연락 우선순위가 높습니다.
+- day_match(신청 요일을 선생님이 가능한지)도 중요한 신호입니다. 둘 다 불가면 후순위.
+- 추천 사유는 반드시 입력 데이터(회수 신호, 경력시간, 자기소개, 평가/추천율, 취소율,
+  가용요일, 현재 담당 아이 수, 시급)에 근거하세요. 담당 아이가 많으면 여력 부족으로 감점.
+
+엄격한 규칙:
+- 입력 candidates 배열에 있는 teacher_sid만 사용하세요. 새 선생님을 지어내지 마세요.
+- 추정·할루시네이션 금지. 모르면 적지 마세요.
+- 한국어. 운영팀 내부 메모처럼 간결하게. 존댓말 쓰지 마세요.
+- JSON 외 텍스트(설명/마크다운/코드펜스) 일절 출력 금지.
+
+응답 JSON 형식:
+{
+  "summary": "한 줄 핵심 (60자 이내)",
+  "ranked": [
+    {"teacher_sid": "후보 배열의 sid", "name": "이름", "rank": 1,
+     "reason": "추천 사유 (60자 이내, 회수 신호·데이터 근거)",
+     "caution": "주의점 있으면, 없으면 빈 문자열"}
+  ],
+  "note": "후보 풀이 얕거나 지역/기간 확장이 필요하면 메모 (없으면 빈 문자열)"
+}
+ranked는 추천 우선순위 상위 5~7명만. 요일 불가 후보는 넣더라도 하위로."""
+
+
 class LlmClient:
     def __init__(self, api_key: str | None = None) -> None:
         key = api_key or settings.anthropic_api_key
@@ -43,6 +114,33 @@ class LlmClient:
         self._client = anthropic.AsyncAnthropic(api_key=key)
         self._model = settings.llm_model_id
         self._max_tokens = settings.llm_max_tokens
+
+    async def generate_recommendation(
+        self, input_context: dict[str, Any], max_tokens: int = 1024,
+        system_prompt: str | None = None,
+    ) -> tuple[str, dict[str, Any], int, int]:
+        """후보 추천. system_prompt 미지정 시 RECOMMEND_SYSTEM_PROMPT
+        (지역 회수는 RECOVERY_SYSTEM_PROMPT 전달). (raw_text, parsed, in_tok, out_tok)."""
+        user_msg = json.dumps(input_context, ensure_ascii=False, default=_json_default)
+        response = await self._client.messages.create(
+            model=settings.llm_recommend_model_id,
+            max_tokens=max_tokens,
+            system=[
+                {
+                    "type": "text",
+                    "text": system_prompt or RECOMMEND_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        raw_text = "".join(
+            block.text for block in response.content if getattr(block, "type", "") == "text"
+        ).strip()
+        parsed = _try_parse_json(raw_text)
+        in_tok = int(getattr(response.usage, "input_tokens", 0) or 0)
+        out_tok = int(getattr(response.usage, "output_tokens", 0) or 0)
+        return raw_text, parsed, in_tok, out_tok
 
     async def generate_insight(
         self, input_context: dict[str, Any]

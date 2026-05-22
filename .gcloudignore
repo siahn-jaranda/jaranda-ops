@@ -4,3 +4,10 @@
 README.md
 backend/
 
+# secrets / 로컬설정 / worktree / 문서 — frontend 이미지엔 index.html만 필요 (WELL2-100)
+.env
+.env.*
+.claude/
+docs/
+poc/
+

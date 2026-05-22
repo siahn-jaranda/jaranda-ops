@@ -1901,6 +1901,26 @@ function renderDetailPanel(app) {
         </div>
       </div>
 
+      ${(app.applyCount||0) === 0 ? `
+      <div class="dp-section">
+        <div class="dp-section-head">
+          <div class="section-label">지원 0건 · 선생님 후보 찾기</div>
+          <div style="font-size:11px;color:#9CA3AF">WELL2-100</div>
+        </div>
+        <div id="teacher-candidates-area" data-sid="${app.id}">
+          ${renderCandidatesEmpty(app.id)}
+        </div>
+      </div>
+      <div class="dp-section">
+        <div class="dp-section-head">
+          <div class="section-label">지원 0건 · 지역 회수 후보</div>
+          <div style="font-size:11px;color:#9CA3AF">WELL2-100</div>
+        </div>
+        <div id="teacher-recovery-area" data-sid="${app.id}">
+          ${renderRecoveryEmpty(app.id)}
+        </div>
+      </div>` : ''}
+
     </div>
     <div class="dp-foot">
       <button class="btn btn-secondary" onclick="openMemoModal('${app.id}')">메모</button>
@@ -2262,6 +2282,170 @@ async function runInsight(sid, force) {
   } catch (e) {
     const cur = document.getElementById('ai-insight-area');
     if (cur && cur.dataset.sid === sid) cur.innerHTML = renderInsightError('네트워크 오류', sid);
+  }
+}
+
+// ====== 지원 0건 선생님 후보 추천 (WELL2-100) ======
+function renderCandidatesEmpty(sid) {
+  return `
+    <div style="font-size:12.5px;color:#6B7280;margin-bottom:10px">지원자가 없는 신청서입니다. 거리·요일 기본 조건이 맞는 선생님 후보를 LLM이 찾아 우선순위를 제안합니다.</div>
+    <button class="btn btn-primary" style="width:100%" onclick="runCandidates('${sid}')">후보 찾기</button>
+  `;
+}
+
+function renderCandidatesLoading() {
+  return `<div style="padding:14px;text-align:center;color:#6B7280;font-size:13px">후보 분석 중… (5~10초)</div>`;
+}
+
+function renderCandidatesError(msg, sid) {
+  return `
+    <div style="padding:10px;background:#FFEEEE;color:#A4271A;border-radius:6px;font-size:12.5px;margin-bottom:8px">${escapeHtml(msg)}</div>
+    <button class="btn btn-secondary" style="width:100%" onclick="runCandidates('${sid}')">다시 시도</button>
+  `;
+}
+
+function renderCandidatesResult(data) {
+  const ranked = data.ranked || [];
+  const dayKo = {mon:'월', tue:'화', wed:'수', thu:'목', fri:'금', sat:'토', sun:'일'};
+  const card = (r) => {
+    const d = r.detail || {};
+    const days = (d.day_match || []).map(x => dayKo[x] || x).join('·');
+    const meta = [];
+    if (d.recommend_rate != null) meta.push(`추천율 ${d.recommend_rate}%(${d.reviews||0})`);
+    if (d.subject_exp_hours) meta.push(`경력 ${Math.round(d.subject_exp_hours)}h`);
+    if (d.subject_wage) meta.push(`시급 ${Number(d.subject_wage).toLocaleString()}원`);
+    if (d.active_kids != null) meta.push(`담당 ${d.active_kids}명`);
+    return `
+      <div style="border:1px solid #EEF1F4;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
+          <span style="background:#1B4FB8;color:#fff;width:20px;height:20px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none">${r.rank||''}</span>
+          <span style="font-weight:600;color:#1E2530;font-size:13px">${escapeHtml(r.name||'')}</span>
+          ${days ? `<span style="background:#E4F5EA;color:#1F6B3C;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600">${escapeHtml(days)} 가능</span>` : ''}
+        </div>
+        <div style="font-size:12.5px;color:#1E2530;line-height:1.5">${escapeHtml(r.reason||'')}</div>
+        ${r.caution ? `<div style="font-size:11.5px;color:#8A5B00;margin-top:3px">⚠ ${escapeHtml(r.caution)}</div>` : ''}
+        ${meta.length ? `<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${escapeHtml(meta.join(' · '))}</div>` : ''}
+      </div>`;
+  };
+  return `
+    <div style="background:#FAFBFC;border:1px solid #EEF1F4;border-radius:8px;padding:12px 14px">
+      ${data.summary ? `<div style="font-weight:600;color:#1E2530;font-size:13px;line-height:1.5;margin-bottom:10px">${escapeHtml(data.summary)}</div>` : ''}
+      ${ranked.length ? ranked.map(card).join('') : '<div style="color:#9CA3AF;font-size:12px">추천 후보 없음</div>'}
+      ${data.note ? `<div style="font-size:11.5px;color:#6B7280;margin-top:6px;line-height:1.5">${escapeHtml(data.note)}</div>` : ''}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <span style="color:#9CA3AF;font-size:11px;flex:1">후보 ${data.candidate_count||0}명 분석 · ${data.input_tokens||0} in / ${data.output_tokens||0} out</span>
+      <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px" onclick="runCandidates('${escapeHtml(data.sid)}')">다시 찾기</button>
+    </div>
+  `;
+}
+
+async function runCandidates(sid) {
+  if (!authToken) { showGate(); return; }
+  const area = document.getElementById('teacher-candidates-area');
+  if (!area || area.dataset.sid !== sid) return;
+  area.innerHTML = renderCandidatesLoading();
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${sid}/teacher-candidates`, {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json'},
+    });
+    const data = await r.json().catch(() => ({}));
+    const cur = document.getElementById('teacher-candidates-area');
+    if (!cur || cur.dataset.sid !== sid) return;
+    if (r.status === 429) { cur.innerHTML = renderCandidatesError(data.detail || '일일 한도 초과', sid); return; }
+    if (r.status === 422) { cur.innerHTML = renderCandidatesError(data.detail || '이 신청서엔 적용 불가', sid); return; }
+    if (r.status === 503) { cur.innerHTML = renderCandidatesError(data.detail || 'LLM 미설정', sid); return; }
+    if (!r.ok) { cur.innerHTML = renderCandidatesError(data.detail || `호출 실패 (${r.status})`, sid); return; }
+    cur.innerHTML = renderCandidatesResult(data);
+  } catch (e) {
+    const cur = document.getElementById('teacher-candidates-area');
+    if (cur && cur.dataset.sid === sid) cur.innerHTML = renderCandidatesError('네트워크 오류', sid);
+  }
+}
+
+// ====== 지원 0건 지역 회수 후보 (WELL2-100 두 번째 버튼) ======
+function renderRecoveryEmpty(sid) {
+  return `
+    <div style="font-size:12.5px;color:#6B7280;margin-bottom:10px">이 동네에서 최근 <b>지원했다 놓쳤거나</b> <b>수업이 막 끝난</b> 선생님을 회수합니다. 새 수업을 받을 여력·의향이 있을 후보입니다.</div>
+    <button class="btn btn-primary" style="width:100%" onclick="runRecovery('${sid}')">회수 후보 찾기</button>
+  `;
+}
+
+function renderRecoveryLoading() {
+  return `<div style="padding:14px;text-align:center;color:#6B7280;font-size:13px">회수 후보 분석 중… (5~10초)</div>`;
+}
+
+function renderRecoveryError(msg, sid) {
+  return `
+    <div style="padding:10px;background:#FFEEEE;color:#A4271A;border-radius:6px;font-size:12.5px;margin-bottom:8px">${escapeHtml(msg)}</div>
+    <button class="btn btn-secondary" style="width:100%" onclick="runRecovery('${sid}')">다시 시도</button>
+  `;
+}
+
+function renderRecoveryResult(data) {
+  const ranked = data.ranked || [];
+  const dayKo = {mon:'월', tue:'화', wed:'수', thu:'목', fri:'금', sat:'토', sun:'일'};
+  const card = (r) => {
+    const d = r.detail || {};
+    const rc = d.recovery || {};
+    const days = (d.day_match || []).map(x => dayKo[x] || x).join('·');
+    const sigs = [];
+    if (rc.closed_count > 0) sigs.push(`<span style="background:#FFE9D6;color:#B5500F;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600">최근 수업종료</span>`);
+    if (rc.unmatched_count > 0) sigs.push(`<span style="background:#EAF0FF;color:#1B4FB8;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600">지원 ${rc.unmatched_count}회 미선택</span>`);
+    const meta = [];
+    if (d.recommend_rate != null) meta.push(`추천율 ${d.recommend_rate}%(${d.reviews||0})`);
+    if (d.subject_exp_hours) meta.push(`경력 ${Math.round(d.subject_exp_hours)}h`);
+    if (d.subject_wage) meta.push(`시급 ${Number(d.subject_wage).toLocaleString()}원`);
+    if (d.active_kids != null) meta.push(`담당 ${d.active_kids}명`);
+    return `
+      <div style="border:1px solid #EEF1F4;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+          <span style="background:#1B4FB8;color:#fff;width:20px;height:20px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none">${r.rank||''}</span>
+          <span style="font-weight:600;color:#1E2530;font-size:13px">${escapeHtml(r.name||'')}</span>
+          ${days ? `<span style="background:#E4F5EA;color:#1F6B3C;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:600">${escapeHtml(days)} 가능</span>` : ''}
+          ${sigs.join('')}
+        </div>
+        <div style="font-size:12.5px;color:#1E2530;line-height:1.5">${escapeHtml(r.reason||'')}</div>
+        ${r.caution ? `<div style="font-size:11.5px;color:#8A5B00;margin-top:3px">⚠ ${escapeHtml(r.caution)}</div>` : ''}
+        ${meta.length ? `<div style="font-size:11px;color:#9CA3AF;margin-top:4px">${escapeHtml(meta.join(' · '))}</div>` : ''}
+      </div>`;
+  };
+  const p = data.params || {};
+  return `
+    <div style="background:#FAFBFC;border:1px solid #EEF1F4;border-radius:8px;padding:12px 14px">
+      ${data.summary ? `<div style="font-weight:600;color:#1E2530;font-size:13px;line-height:1.5;margin-bottom:10px">${escapeHtml(data.summary)}</div>` : ''}
+      ${ranked.length ? ranked.map(card).join('') : '<div style="color:#9CA3AF;font-size:12px">회수 후보 없음</div>'}
+      ${data.note ? `<div style="font-size:11.5px;color:#6B7280;margin-top:6px;line-height:1.5">${escapeHtml(data.note)}</div>` : ''}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <span style="color:#9CA3AF;font-size:11px;flex:1">반경 ${((p.radius_m||0)/1000)}km · 지원 ${p.apply_days||0}일/종료 ${p.close_days||0}일 · 후보 ${data.candidate_count||0}명 · ${data.input_tokens||0} in / ${data.output_tokens||0} out</span>
+      <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px" onclick="runRecovery('${escapeHtml(data.sid)}')">다시 찾기</button>
+    </div>
+  `;
+}
+
+async function runRecovery(sid) {
+  if (!authToken) { showGate(); return; }
+  const area = document.getElementById('teacher-recovery-area');
+  if (!area || area.dataset.sid !== sid) return;
+  area.innerHTML = renderRecoveryLoading();
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${sid}/teacher-recovery-candidates`, {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json'},
+    });
+    const data = await r.json().catch(() => ({}));
+    const cur = document.getElementById('teacher-recovery-area');
+    if (!cur || cur.dataset.sid !== sid) return;
+    if (r.status === 429) { cur.innerHTML = renderRecoveryError(data.detail || '일일 한도 초과', sid); return; }
+    if (r.status === 422) { cur.innerHTML = renderRecoveryError(data.detail || '이 신청서엔 적용 불가', sid); return; }
+    if (r.status === 503) { cur.innerHTML = renderRecoveryError(data.detail || 'LLM 미설정', sid); return; }
+    if (!r.ok) { cur.innerHTML = renderRecoveryError(data.detail || `호출 실패 (${r.status})`, sid); return; }
+    cur.innerHTML = renderRecoveryResult(data);
+  } catch (e) {
+    const cur = document.getElementById('teacher-recovery-area');
+    if (cur && cur.dataset.sid === sid) cur.innerHTML = renderRecoveryError('네트워크 오류', sid);
   }
 }
 

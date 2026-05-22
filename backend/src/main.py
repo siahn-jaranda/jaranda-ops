@@ -14,7 +14,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from src import auth
 from src.config import settings
-from src.routes import applications, handlers, insights, managed, memos
+from src.routes import applications, candidates, handlers, insights, managed, memos
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -53,6 +53,9 @@ app.include_router(managed.router, dependencies=[Depends(auth.require_auth)])
 
 # LLM 인사이트 — POST는 호출당 비용. 라우트 내부에서 일일 한도 가드.
 app.include_router(insights.router, dependencies=[Depends(auth.require_auth)])
+
+# 지원 0개 신청서 선생님 추천 (WELL2-100) — POST 호출당 비용, 일일 한도 공유.
+app.include_router(candidates.router, dependencies=[Depends(auth.require_auth)])
 
 
 @app.get("/")

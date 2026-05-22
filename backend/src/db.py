@@ -13,6 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 
 from src.config import settings
 
+# teacher_specialties(=subject_wage_id) → 과목별 자기소개 컬럼 (화이트리스트, SQL 포맷용)
+_SPECIALTY_INTRO = {
+    1: "teacher_introduction_activity_tag_care",
+    2: "teacher_introduction_activity_tag_stem",
+    3: "teacher_introduction_activity_tag_sports",
+    4: "teacher_introduction_activity_tag_art",
+    5: "teacher_introduction_activity_tag_foreign_language",
+    6: "teacher_introduction_activity_tag_korean",
+}
+
 
 class JarandaReplica:
     def __init__(self, url: str | None = None) -> None:
@@ -147,6 +157,8 @@ class JarandaReplica:
               r.preferable_teacher_gender,
               r.preferable_teacher_characteristics,
               r.parent_address,
+              r.lat,
+              r.lng,
               r.requested_teacher_name,
               r.additional_children_num,
               r.regularity,
@@ -567,6 +579,243 @@ class JarandaReplica:
                     if int(m[col] or 0) != 0:
                         result[tsid].add(name)
         return result
+
+    async def find_nearby_sigungu(
+        self, lat: float, lng: float, n: int = 3
+    ) -> list[str]:
+        """부모 좌표에서 가까운 시군구 법정동코드 N개.
+
+        service_area_geometry의 시군구 중심좌표(center_lat/lng)와 ST_Distance_Sphere
+        거리순. 부모의 행정구역 코드 컬럼은 NULL이라 좌표만 신뢰 (WELL2-100 검증).
+        """
+        query = text(
+            """
+            SELECT g.legal_dong_code
+            FROM service_area_geometry g
+            ORDER BY ST_Distance_Sphere(
+                POINT(:lng, :lat), POINT(g.center_lng, g.center_lat)
+            ) ASC
+            LIMIT :n
+            """
+        )
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"lat": lat, "lng": lng, "n": n})
+            return [r._mapping["legal_dong_code"] for r in rows]
+
+    async def list_candidate_teachers(
+        self,
+        recommendation_sid: str,
+        gu_codes: list[str],
+        subject_id: int,
+        statuses: list[int],
+        limit: int = 15,
+    ) -> list[dict[str, Any]]:
+        """지원 0개 신청서용 선생님 후보 풀.
+
+        teacher_preference_service_area(매일 갱신되는 선생님 선호 활동지)에서 인근
+        시군구 + 활동상태 + 해당 과목 활동소개 보유 + 이미 추천된 선생님 제외.
+        과목은 자기소개 태그 컬럼(intro_col) 보유 여부로 거른다 — 요일은 거르지 않고
+        LLM이 day_match로 판단. 정렬은 선호우선순위(priority) → 진행중 수업 0개 우선
+        (active_kids ASC) → 최근 로그인순(account.last_signed_in DESC). 부모 추천순·
+        누적 수업시간은 제외해 실적 적은 신규도 들어오게 하고, 동순위는 여력·접속
+        활성으로 가른다. 가용요일/평가/여력/시급/자기소개를 함께
+        실어 LLM 입력으로 쓴다. udong_teacher_list는 갱신 중단되어 미사용.
+        intro_col은 화이트리스트(_SPECIALTY_INTRO)에서만 와 SQL 포맷에 안전하다.
+        """
+        if not gu_codes:
+            return []
+        intro_col = _SPECIALTY_INTRO.get(subject_id, _SPECIALTY_INTRO[5])
+        query = text(
+            f"""
+            SELECT
+              t.account_sid AS teacher_sid, t.name,
+              t.activity_status, t.activity_status_text,
+              t.experience_hour, t.experience_hour_for_study,
+              t.experience_hour_for_play, t.university, t.major,
+              t.cancellation_rate, t.lateness,
+              MIN(tps.priority) AS pref_priority,
+              MAX(sch.mon <> 0) AS mon, MAX(sch.tue <> 0) AS tue,
+              MAX(sch.wed <> 0) AS wed, MAX(sch.thu <> 0) AS thu,
+              MAX(sch.fri <> 0) AS fri, MAX(sch.sat <> 0) AS sat,
+              MAX(sch.sun <> 0) AS sun,
+              w.teacher_wage_amount AS subject_wage,
+              (SELECT COUNT(*) FROM parent_feedback pf
+                 WHERE pf.teacher_account_sid = t.account_sid AND pf.status = 2) AS reviews,
+              (SELECT SUM(CASE WHEN pf.recommend = 1 THEN 1 ELSE 0 END) FROM parent_feedback pf
+                 WHERE pf.teacher_account_sid = t.account_sid AND pf.status = 2) AS recommends,
+              (SELECT COUNT(DISTINCT vi.child_account_sid) FROM visit_instance vi
+                 WHERE vi.matched_teacher_account_sid = t.account_sid AND vi.status = 1) AS active_kids,
+              LEFT(t.{intro_col}, 300) AS intro,
+              MAX(a.last_signed_in) AS last_login
+            FROM teacher_preference_service_area tps
+            JOIN teacher t ON t.account_sid = tps.teacher_account_sid
+            LEFT JOIN schedule sch ON sch.account_sid = t.account_sid
+            LEFT JOIN jrdtbl_subject_teacher_wage_info w
+              ON w.teacher_account_sid = t.account_sid AND w.subject_wage_id = :subject_id
+            LEFT JOIN account a ON a.sid = t.account_sid
+            WHERE tps.legal_dong_code IN :gu_codes
+              AND t.activity_status IN :statuses
+              AND t.{intro_col} IS NOT NULL AND TRIM(t.{intro_col}) <> ''
+              AND NOT EXISTS (
+                SELECT 1 FROM recommendation_teachers rt
+                WHERE rt.recommendation_sid = :sid AND rt.teacher_account_sid = t.account_sid
+              )
+            GROUP BY t.account_sid
+            ORDER BY pref_priority ASC, active_kids ASC, last_login DESC
+            LIMIT :k
+            """
+        ).bindparams(
+            bindparam("gu_codes", expanding=True),
+            bindparam("statuses", expanding=True),
+        )
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                query,
+                {
+                    "gu_codes": gu_codes,
+                    "statuses": statuses,
+                    "sid": recommendation_sid,
+                    "subject_id": subject_id,
+                    "k": limit,
+                },
+            )
+            return [dict(row._mapping) for row in rows]
+
+    async def list_recovery_candidates(
+        self,
+        lat: float,
+        lng: float,
+        subject_id: int,
+        statuses: list[int],
+        radius_m: int = 5000,
+        apply_days: int = 30,
+        close_days: int = 3,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """'지역 회수' 후보 — 부모 좌표 반경 내에서 둘 중 하나 이상인 선생님.
+
+          (A) 최근 apply_days일 인근 신청서에 지원(applied)했으나 미선택
+              (다른 선생님과 매칭됨 OR 마감 무산)
+          (B) 최근 close_days일 인근 수업이 종료(visit.status=90 방문종료)
+
+        지역은 recommendation.lat/lng로 매칭(visit은 recommendation_sid로 연결,
+        recommendation의 area_code는 전부 NULL이라 좌표만 신뢰). 신호(미선택 횟수·
+        최근시각, 종료 수업 수·최근시각)를 teacher 상세와 함께 반환해 LLM이 '연락하면
+        받을 만한' 순으로 재정렬·사유 생성하게 한다. 과목은 거르지 않고(회수는 폭넓게)
+        신청 과목 시급·자기소개만 부착. intro_col은 화이트리스트라 SQL 포맷에 안전.
+        """
+        intro_col = _SPECIALTY_INTRO.get(subject_id, _SPECIALTY_INTRO[5])
+        sig_apply = text(
+            """
+            SELECT rt.teacher_account_sid AS tsid,
+                   COUNT(*) AS unmatched_count,
+                   MAX(rt._created_at) AS last_unmatched_at
+            FROM recommendation_teachers rt
+            JOIN recommendation r ON r.sid = rt.recommendation_sid
+            WHERE rt.applied = 1 AND rt.is_deleted = b'0'
+              AND rt._created_at >= DATE_SUB(NOW(), INTERVAL :apply_days DAY)
+              AND r.lat <> 0
+              AND ST_Distance_Sphere(POINT(:lng, :lat), POINT(r.lng, r.lat)) <= :radius_m
+              AND (
+                    (r.matched_teacher_account_sid IS NOT NULL
+                     AND r.matched_teacher_account_sid <> rt.teacher_account_sid)
+                 OR (r.matched_teacher_account_sid IS NULL
+                     AND (r.status = 99 OR (r.deadline_at IS NOT NULL AND r.deadline_at < NOW())))
+                  )
+            GROUP BY rt.teacher_account_sid
+            """
+        )
+        sig_closed = text(
+            """
+            SELECT v.matched_teacher_account_sid AS tsid,
+                   COUNT(*) AS closed_count,
+                   MAX(v.closed_at) AS last_closed_at
+            FROM visit v
+            JOIN recommendation r ON r.sid = v.recommendation_sid
+            WHERE v.status = 90
+              AND v.closed_at >= DATE_SUB(NOW(), INTERVAL :close_days DAY)
+              AND r.lat <> 0
+              AND ST_Distance_Sphere(POINT(:lng, :lat), POINT(r.lng, r.lat)) <= :radius_m
+            GROUP BY v.matched_teacher_account_sid
+            """
+        )
+        async with self._session_factory() as session:
+            rows_a = (await session.execute(
+                sig_apply,
+                {"lat": lat, "lng": lng, "radius_m": radius_m, "apply_days": apply_days},
+            )).all()
+            rows_b = (await session.execute(
+                sig_closed,
+                {"lat": lat, "lng": lng, "radius_m": radius_m, "close_days": close_days},
+            )).all()
+
+        sig: dict[str, dict[str, Any]] = {}
+        for row in rows_a:
+            m = row._mapping
+            sig[m["tsid"]] = {
+                "unmatched_count": int(m["unmatched_count"] or 0),
+                "last_unmatched_at": m["last_unmatched_at"],
+                "closed_count": 0, "last_closed_at": None,
+            }
+        for row in rows_b:
+            m = row._mapping
+            d = sig.setdefault(m["tsid"], {
+                "unmatched_count": 0, "last_unmatched_at": None,
+                "closed_count": 0, "last_closed_at": None,
+            })
+            d["closed_count"] = int(m["closed_count"] or 0)
+            d["last_closed_at"] = m["last_closed_at"]
+        if not sig:
+            return []
+
+        detail = text(
+            f"""
+            SELECT
+              t.account_sid AS teacher_sid, t.name,
+              t.activity_status, t.activity_status_text,
+              t.experience_hour, t.experience_hour_for_study,
+              t.university, t.major, t.cancellation_rate, t.lateness,
+              MAX(sch.mon <> 0) AS mon, MAX(sch.tue <> 0) AS tue,
+              MAX(sch.wed <> 0) AS wed, MAX(sch.thu <> 0) AS thu,
+              MAX(sch.fri <> 0) AS fri, MAX(sch.sat <> 0) AS sat,
+              MAX(sch.sun <> 0) AS sun,
+              w.teacher_wage_amount AS subject_wage,
+              (SELECT COUNT(*) FROM parent_feedback pf
+                 WHERE pf.teacher_account_sid = t.account_sid AND pf.status = 2) AS reviews,
+              (SELECT SUM(CASE WHEN pf.recommend = 1 THEN 1 ELSE 0 END) FROM parent_feedback pf
+                 WHERE pf.teacher_account_sid = t.account_sid AND pf.status = 2) AS recommends,
+              (SELECT COUNT(DISTINCT vi.child_account_sid) FROM visit_instance vi
+                 WHERE vi.matched_teacher_account_sid = t.account_sid AND vi.status = 1) AS active_kids,
+              LEFT(t.{intro_col}, 300) AS intro
+            FROM teacher t
+            LEFT JOIN schedule sch ON sch.account_sid = t.account_sid
+            LEFT JOIN jrdtbl_subject_teacher_wage_info w
+              ON w.teacher_account_sid = t.account_sid AND w.subject_wage_id = :subject_id
+            WHERE t.account_sid IN :tsids
+              AND t.activity_status IN :statuses
+            GROUP BY t.account_sid
+            """
+        ).bindparams(
+            bindparam("tsids", expanding=True),
+            bindparam("statuses", expanding=True),
+        )
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                detail,
+                {"tsids": list(sig.keys()), "statuses": statuses, "subject_id": subject_id},
+            )
+            cands = []
+            for row in rows:
+                d = dict(row._mapping)
+                s = sig.get(d["teacher_sid"], {})
+                d["unmatched_count"] = s.get("unmatched_count", 0)
+                d["last_unmatched_at"] = s.get("last_unmatched_at")
+                d["closed_count"] = s.get("closed_count", 0)
+                d["last_closed_at"] = s.get("last_closed_at")
+                cands.append(d)
+        # (B) 막 빈 슬롯(최근 종료) 우선 → 미선택 횟수 많은 순
+        cands.sort(key=lambda c: (0 if c["closed_count"] > 0 else 1, -c["unmatched_count"]))
+        return cands[:limit]
 
 
 _replica: JarandaReplica | None = None
