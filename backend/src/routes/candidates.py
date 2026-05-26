@@ -235,7 +235,7 @@ async def recommend_recovery_candidates(
         raise HTTPException(status_code=422, detail="신청서에 좌표(lat/lng)가 없어 거리 매칭 불가")
 
     spec = int(app.get("teacher_specialties") or 5)
-    statuses = [2, 10]  # 회수는 활동중+활동대기 (폭넓게)
+    statuses = [2]  # 활동중만 (활동대기 제외)
     try:
         cands = await replica.list_recovery_candidates(
             float(app["lat"]), float(app["lng"]), spec, statuses,
