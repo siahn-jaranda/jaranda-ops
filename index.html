@@ -1905,7 +1905,6 @@ function renderDetailPanel(app) {
       <div class="dp-section">
         <div class="dp-section-head">
           <div class="section-label">지원 0건 · 선생님 후보 찾기</div>
-          <div style="font-size:11px;color:#9CA3AF">WELL2-100</div>
         </div>
         <div id="teacher-candidates-area" data-sid="${app.id}">
           ${renderCandidatesEmpty(app.id)}
@@ -1913,8 +1912,7 @@ function renderDetailPanel(app) {
       </div>
       <div class="dp-section">
         <div class="dp-section-head">
-          <div class="section-label">지원 0건 · 지역 회수 후보</div>
-          <div style="font-size:11px;color:#9CA3AF">WELL2-100</div>
+          <div class="section-label">지원 0건 · 지역 리텐션 후보</div>
         </div>
         <div id="teacher-recovery-area" data-sid="${app.id}">
           ${renderRecoveryEmpty(app.id)}
@@ -2364,16 +2362,16 @@ async function runCandidates(sid) {
   }
 }
 
-// ====== 지원 0건 지역 회수 후보 (WELL2-100 두 번째 버튼) ======
+// ====== 지원 0건 지역 리텐션 후보 (WELL2-100 두 번째 버튼) ======
 function renderRecoveryEmpty(sid) {
   return `
     <div style="font-size:12.5px;color:#6B7280;margin-bottom:10px">이 동네에서 최근 <b>지원했다 놓쳤거나</b> <b>수업이 막 끝난</b> 선생님을 회수합니다. 새 수업을 받을 여력·의향이 있을 후보입니다.</div>
-    <button class="btn btn-primary" style="width:100%" onclick="runRecovery('${sid}')">회수 후보 찾기</button>
+    <button class="btn btn-primary" style="width:100%" onclick="runRecovery('${sid}')">리텐션 후보 찾기</button>
   `;
 }
 
 function renderRecoveryLoading() {
-  return `<div style="padding:14px;text-align:center;color:#6B7280;font-size:13px">회수 후보 분석 중… (5~10초)</div>`;
+  return `<div style="padding:14px;text-align:center;color:#6B7280;font-size:13px">리텐션 후보 분석 중… (5~10초)</div>`;
 }
 
 function renderRecoveryError(msg, sid) {
@@ -2415,7 +2413,7 @@ function renderRecoveryResult(data) {
   return `
     <div style="background:#FAFBFC;border:1px solid #EEF1F4;border-radius:8px;padding:12px 14px">
       ${data.summary ? `<div style="font-weight:600;color:#1E2530;font-size:13px;line-height:1.5;margin-bottom:10px">${escapeHtml(data.summary)}</div>` : ''}
-      ${ranked.length ? ranked.map(card).join('') : '<div style="color:#9CA3AF;font-size:12px">회수 후보 없음</div>'}
+      ${ranked.length ? ranked.map(card).join('') : '<div style="color:#9CA3AF;font-size:12px">리텐션 후보 없음</div>'}
       ${data.note ? `<div style="font-size:11.5px;color:#6B7280;margin-top:6px;line-height:1.5">${escapeHtml(data.note)}</div>` : ''}
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px">

@@ -62,7 +62,6 @@ def _candidate_view(c: dict[str, Any], want_days: list[str]) -> dict[str, Any]:
         "school": c.get("university"), "major": c.get("major"),
         "reviews": rev, "recommends": rec,
         "recommend_rate": round(rec / rev * 100, 1) if rev else None,
-        "cancel_rate": float(c.get("cancellation_rate") or 0),
         "lateness": int(c.get("lateness") or 0),
         "active_kids": int(c.get("active_kids") or 0),
         "subject_wage": int(c.get("subject_wage") or 0),
