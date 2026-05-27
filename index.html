@@ -596,9 +596,41 @@ input, textarea, select { font-family: inherit; }
   background: #EEF1F4; color: #4B5563; font-weight: 600; cursor: pointer; user-select: none;
 }
 .memo-modal .tag-chip.selected { background: #1B4FB8; color: #fff; }
+
+/* 첫 진입 로딩 오버레이 */
+.boot-loader {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; background: rgba(247, 249, 252, 0.96);
+  transition: opacity 0.35s ease;
+}
+.boot-loader.hide { opacity: 0; pointer-events: none; }
+.boot-loader .bl-logo {
+  width: 56px; height: 56px; border-radius: 14px; background: #1B4FB8; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 800; margin-bottom: 4px;
+  animation: bl-pulse 1.4s ease-in-out infinite;
+}
+.boot-loader .bl-spinner {
+  width: 44px; height: 44px; border: 4px solid #E3E9F2; border-top-color: #1B4FB8;
+  border-radius: 50%; animation: bl-spin 0.8s linear infinite;
+}
+.boot-loader .bl-text {
+  font-size: 14px; color: #1B4FB8; font-weight: 600; letter-spacing: 0.02em;
+  animation: bl-pulse 1.4s ease-in-out infinite;
+}
+@keyframes bl-spin { to { transform: rotate(360deg); } }
+@keyframes bl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 </style>
 </head>
 <body>
+
+<!-- 첫 진입 로딩 오버레이 -->
+<div class="boot-loader" id="boot-loader">
+  <div class="bl-logo">자</div>
+  <div class="bl-spinner"></div>
+  <div class="bl-text">신청서 불러오는 중…</div>
+</div>
 
 <!-- LOGIN GATE -->
 <div class="login-gate" id="login-gate">
@@ -871,6 +903,7 @@ function setDataSource(src) {
 }
 
 function showGate(err) {
+  hideBootLoader();  // 비로그인/세션만료 — 게이트 위에 로딩 오버레이 안 남기기
   document.getElementById('login-gate').style.display = '';
   document.getElementById('app-shell').classList.remove('ready');
   const errEl = document.getElementById('gate-err');
@@ -883,6 +916,14 @@ function showApp() {
   document.getElementById('login-gate').style.display = 'none';
   document.getElementById('app-shell').classList.add('ready');
   updateAuthUI();
+}
+
+// 첫 진입 로딩 오버레이 제거 — 최초 데이터 도착/로드 완료/게이트 진입 시 1회. idempotent.
+function hideBootLoader() {
+  const el = document.getElementById('boot-loader');
+  if (!el || el.classList.contains('hide')) return;
+  el.classList.add('hide');
+  setTimeout(() => { if (el.parentNode) el.remove(); }, 400);
 }
 
 function updateAuthUI() {
@@ -1165,6 +1206,7 @@ async function loadLiveData(force, preserveSelection) {
       }
       setDataSource('live');
       render();
+      hideBootLoader();  // 첫 batch 도착 → 로딩 오버레이 제거
     }
   }
   if (APPS_ALL.length > 0) {
@@ -1181,6 +1223,7 @@ async function loadLiveData(force, preserveSelection) {
   _lastRefreshAt = new Date();
   updateRefreshLabel();
   render();
+  hideBootLoader();  // 데이터 없거나 로드 완료 시에도 오버레이 제거 (안전망)
 }
 
 function updateRefreshLabel() {
