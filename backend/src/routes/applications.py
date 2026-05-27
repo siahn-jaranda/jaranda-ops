@@ -254,6 +254,29 @@ def to_snapshot_fields(
     }
 
 
+def live_status_overlay(rec: dict[str, Any]) -> dict[str, Any]:
+    """recommendation row의 현재 동적 필드 → 관리 목록 row 오버레이용 camelCase.
+
+    snapshot은 첫 메모 시점에 freeze되므로 상태·매칭 선생님·취소사유·마감은 옛 값으로
+    굳는다. 관리 신청서 목록은 이 함수의 결과로 동적 필드만 덮어써서 현재값을 노출한다.
+    키/기본값은 snapshot_store._row_to_dict와 동일하게 맞춰 frozen row와 호환.
+    """
+    status_code = rec.get("status")
+    status_key, status_label = STATUS_META.get(status_code, ("etc", f"상태{status_code}"))
+    confirmed = rec.get("confirmed_at")
+    cancelled = rec.get("cancelled_at")
+    deadline = rec.get("deadline_at")
+    return {
+        "statusKey": status_key,
+        "status": status_label,
+        "matchedTeacher": (rec.get("matched_teacher_name") or "").strip(),
+        "cancelledReason": _parse_cancelled_reason(rec.get("cancelled_info")) or "",
+        "appDeadlineAt": deadline.isoformat() if _is_real_ts(deadline) else None,
+        "appConfirmedAt": confirmed.isoformat() if _is_real_ts(confirmed) else None,
+        "appCancelledAt": cancelled.isoformat() if _is_real_ts(cancelled) else None,
+    }
+
+
 def _request_chips(rec: dict[str, Any], subjects: list[dict[str, Any]] | None = None) -> list[str]:
     """카드 보조 정보 칩. 맨 앞에 수업 과목(있으면) → 정기성 → 매주/격주 → 기타."""
     chips: list[str] = []

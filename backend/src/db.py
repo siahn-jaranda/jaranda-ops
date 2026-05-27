@@ -185,6 +185,30 @@ class JarandaReplica:
             row = result.first()
             return dict(row._mapping) if row else None
 
+    async def get_status_overlay(self, sids: list[str]) -> dict[str, dict[str, Any]]:
+        """관리 신청서 목록용 — sid 리스트의 현재 동적 상태를 윈도우 무관하게 조회.
+
+        snapshot은 첫 메모 시점에 freeze되므로 status/매칭/취소/마감은 옛 값으로 굳는다.
+        관리 목록 로드 시 이 메서드로 현재값을 가져와 동적 필드만 덮어쓴다. 최근
+        N시간 윈도우를 적용하지 않으므로 이미 취소(99)·매칭(40)된 오래된 신청서도
+        현재 상태를 그대로 반환. replica에 row가 없으면(삭제됨) 해당 sid는 누락 →
+        호출부가 frozen 값을 유지. 리턴: {sid: recommendation row}.
+        """
+        if not sids:
+            return {}
+        query = text(
+            """
+            SELECT
+              sid, status, matched_teacher_name, cancelled_info,
+              deadline_at, confirmed_at, cancelled_at
+            FROM recommendation
+            WHERE sid IN :sids
+            """
+        ).bindparams(bindparam("sids", expanding=True))
+        async with self._session_factory() as session:
+            result = await session.execute(query, {"sids": sids})
+            return {row._mapping["sid"]: dict(row._mapping) for row in result}
+
     async def get_parent_history_counts(
         self, parent_account_sids: list[str]
     ) -> dict[str, dict[str, int]]:
