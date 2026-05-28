@@ -55,7 +55,9 @@ class AutoRunStore:
         """
         if not sids:
             return set()
-        # PG의 = ANY(text[]) — asyncpg가 Python list를 native array로 직렬화
+        # PG의 = ANY(text[]) — asyncpg가 Python list를 native array로 직렬화.
+        # 컬럼명 주의: matching_ops_memo / handler 는 `application_sid` 컨벤션
+        # (자란다 prod recommendation.sid 값을 의미), auto_run 만 신규로 recommendation_sid.
         query = text(
             """
             SELECT recommendation_sid AS sid
@@ -63,9 +65,9 @@ class AutoRunStore:
              WHERE recommendation_sid = ANY(:sids)
                AND dry_run = false
             UNION
-            SELECT recommendation_sid AS sid
+            SELECT application_sid AS sid
               FROM matching_ops_memo
-             WHERE recommendation_sid = ANY(:sids)
+             WHERE application_sid = ANY(:sids)
             UNION
             SELECT application_sid AS sid
               FROM matching_ops_handler
