@@ -621,6 +621,36 @@ input, textarea, select { font-family: inherit; }
 }
 @keyframes bl-spin { to { transform: rotate(360deg); } }
 @keyframes bl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* 스켈레톤 로딩 카드 — 신청서 카드와 동일 그리드 구조 */
+.skel-cards { display: grid; gap: 12px; padding: 4px 0; }
+.skel-card {
+  background: #fff; border: 1px solid #E5E8EC; border-radius: 12px;
+  padding: 18px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1.5fr) minmax(0,0.8fr);
+  gap: 18px; align-items: stretch;
+}
+.skel-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.skel-col.rec { background: #FAFBFC; border-radius: 10px; padding: 12px 14px; border: 1px solid #EEF1F4; }
+.skel-col.right { align-items: flex-end; }
+.skel-pills { display: flex; gap: 6px; }
+.skel-line {
+  background: linear-gradient(90deg, #EEF1F4 0%, #F7F9FC 50%, #EEF1F4 100%);
+  background-size: 200% 100%;
+  border-radius: 6px; height: 12px;
+  animation: skel-shimmer 1.4s ease-in-out infinite;
+}
+.skel-line.lg { height: 18px; width: 55%; }
+.skel-line.md { width: 80%; }
+.skel-line.sm { width: 45%; height: 10px; }
+.skel-line.pill { width: 64px; height: 18px; border-radius: 999px; }
+.skel-line.bar { width: 100%; height: 8px; border-radius: 999px; }
+.skel-line.btn { width: 88px; height: 28px; border-radius: 6px; }
+@keyframes skel-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 </style>
 </head>
 <body>
@@ -885,6 +915,8 @@ let state = {
   loadedBatches: 0,   // 지금까지 fetch 완료한 batch 수 (각 batch = BATCH_SIZE 건)
   hasMore: true,      // 마지막 batch가 BATCH_SIZE 미만이면 false
   loading: false,
+  // 첫 진입/force 새로고침 — 카드 영역에 스켈레톤 표시. 데이터 도착 시 false.
+  initialLoading: false,
   // 추가 필터 — 수락/지원 응답이 1명 이상인 신청서만
   respondedOnly: false,
 };
@@ -1190,6 +1222,9 @@ async function loadLiveData(force, preserveSelection) {
     state.loadedBatches = 0;
     state.hasMore = true;
     state.page = 1;
+    // 카드 영역에 스켈레톤을 즉시 그려준다 — 데이터 도착 전 빈 화면 방지
+    state.initialLoading = true;
+    if (state.tab === 'matching') render();
   }
   // 진행 중인 다른 session 무효화 — 자동 새로고침이 중간에 끼어들면 직전 fetch는 멈춤
   const session = ++_loadingSession;
@@ -1205,6 +1240,7 @@ async function loadLiveData(force, preserveSelection) {
         state.selectedId = _currentPageApps()[0].id;
       }
       setDataSource('live');
+      state.initialLoading = false;  // 실데이터 도착 → 스켈레톤 종료
       render();
       hideBootLoader();  // 첫 batch 도착 → 로딩 오버레이 제거
     }
@@ -1222,6 +1258,7 @@ async function loadLiveData(force, preserveSelection) {
   }
   _lastRefreshAt = new Date();
   updateRefreshLabel();
+  state.initialLoading = false;  // 데이터 0건이어도 스켈레톤 → 빈 안내문으로 전환
   render();
   hideBootLoader();  // 데이터 없거나 로드 완료 시에도 오버레이 제거 (안전망)
 }
@@ -1301,6 +1338,7 @@ function resetDateFilter() {
 // ====== MANAGED LIST (메모 영속화된 신청서) ======
 let MANAGED = [];
 let managedLoadedAt = 0;
+let managedInitialLoading = false;
 
 function fmtRelativeTime(iso) {
   if (!iso) return '—';
@@ -1347,6 +1385,11 @@ function snapshotToApp(s) {
 async function loadManagedData(force) {
   if (!authToken) { showGate(); return; }
   if (!force && Date.now() - managedLoadedAt < 10000) { renderManaged(); return; }
+  // 캐시 미스 — fetch 동안 스켈레톤 노출. 캐시 히트는 즉시 그리므로 스킵.
+  if (MANAGED.length === 0) {
+    managedInitialLoading = true;
+    renderManaged();
+  }
   try {
     const r = await fetch(API_BASE + '/api/managed-applications?limit=200', {
       headers: {'Authorization': 'Bearer ' + authToken},
@@ -1356,8 +1399,10 @@ async function loadManagedData(force) {
     const data = await r.json();
     MANAGED = (data.rows || []).map(snapshotToApp);
     managedLoadedAt = Date.now();
+    managedInitialLoading = false;
     renderManaged();
   } catch (e) {
+    managedInitialLoading = false;
     console.warn('Managed fetch failed:', e.message);
     document.getElementById('managed-list-area').innerHTML =
       `<div class="empty-feed">관리 신청서 목록을 불러오지 못했습니다 (${escapeHtml(e.message)}).</div>`;
@@ -1368,7 +1413,11 @@ function renderManaged() {
   document.getElementById('managed-count-chip').textContent = `전체 ${MANAGED.length}건`;
   const listArea = document.getElementById('managed-list-area');
   if (MANAGED.length === 0) {
-    listArea.innerHTML = `<div class="empty-feed">메모가 작성된 신청서가 아직 없습니다.</div>`;
+    if (managedInitialLoading) {
+      listArea.innerHTML = renderSkeletonCards(4);
+    } else {
+      listArea.innerHTML = `<div class="empty-feed">메모가 작성된 신청서가 아직 없습니다.</div>`;
+    }
     document.getElementById('managed-detail-area').innerHTML = '';
     return;
   }
@@ -1459,6 +1508,30 @@ function teacherLineCard(label, t) {
     ${hasName ? viewedBadge(t.viewed, t.viewedAt, 'sm') : ''}
     <div class="state-dot" style="color:${TONE_FG[meta.tone]}"><span class="dot" style="background:${TONE_FG[meta.tone]}"></span>${meta.label}</div>
   </div>`;
+}
+
+// 데이터 도착 전 카드 영역에 표시할 골격. app-card와 같은 3컬럼 그리드.
+function renderSkeletonCards(n) {
+  const one = `<div class="skel-card">
+      <div class="skel-col">
+        <div class="skel-pills"><div class="skel-line pill"></div><div class="skel-line pill"></div></div>
+        <div class="skel-line lg"></div>
+        <div class="skel-line md"></div>
+        <div class="skel-line sm"></div>
+      </div>
+      <div class="skel-col rec">
+        <div class="skel-line sm"></div>
+        <div class="skel-line md"></div>
+        <div class="skel-line md"></div>
+      </div>
+      <div class="skel-col right">
+        <div class="skel-line sm"></div>
+        <div class="skel-line bar"></div>
+        <div class="skel-line sm"></div>
+        <div class="skel-line btn"></div>
+      </div>
+    </div>`;
+  return `<div class="skel-cards">${one.repeat(n || 4)}</div>`;
 }
 
 function renderCardView(apps) {
@@ -2028,8 +2101,13 @@ function render() {
   const listArea = document.getElementById('list-area');
   const detailArea = document.getElementById('detail-area');
 
-  if (state.layout === 'table') listArea.innerHTML = renderTableView(pageApps);
-  else listArea.innerHTML = renderCardView(pageApps);
+  if (state.initialLoading && pageApps.length === 0) {
+    listArea.innerHTML = renderSkeletonCards(state.layout === 'table' ? 6 : 5);
+  } else if (state.layout === 'table') {
+    listArea.innerHTML = renderTableView(pageApps);
+  } else {
+    listArea.innerHTML = renderCardView(pageApps);
+  }
 
   const sel = pageApps.find(a => a.id === state.selectedId)
             || APPS_ALL.find(a => a.id === state.selectedId)
@@ -2519,9 +2597,9 @@ function _initDateInputs() {
 
 if (authToken) {
   showApp();
+  hideBootLoader();          // 헤더/필터를 즉시 보여주고 카드 영역은 스켈레톤이 메움
   _initDateInputs();
-  render();
-  loadLiveData(true);
+  loadLiveData(true);        // 내부에서 state.initialLoading=true 후 render()
   startAutoRefresh();
 } else {
   render();
