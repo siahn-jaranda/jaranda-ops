@@ -319,7 +319,11 @@ async def _process_one(
         )
         return {"sid": sid, "status": "error", "error": err[:300]}
 
-    succeed_count = int(add_result.get("succeedCount") or 0)
+    # 자란다 콘솔 응답이 snake_case (application.yaml: property-naming-strategy: SNAKE_CASE).
+    # 안전하게 두 표기 모두 호환.
+    succeed_count = int(
+        add_result.get("succeed_count") or add_result.get("succeedCount") or 0
+    )
 
     # 메모 (graceful — 실패해도 visit-offers 진행)
     memo_ok = False
