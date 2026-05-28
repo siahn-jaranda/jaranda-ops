@@ -850,6 +850,12 @@ class JarandaReplica:
           - status = 10 (ACCEPTED)
           - created_at <= NOW() - INTERVAL N MINUTE  (생성 후 N분 이상 경과)
           - lat/lng NOT NULL (거리 매칭 필수)
+          - **regularity = 2 (REGULAR, 정기수업)** — 긴급돌봄(1=ONE_TIME)·
+            프로그램(3=MULTIPLE_TIMES) 제외. Regularity enum: 0=NONE/1=ONE_TIME/
+            2=REGULAR/3=MULTIPLE_TIMES. 프로그램 신청서는 코드상 ONE_TIME 또는
+            MULTIPLE_TIMES 로 생성됨 (CreateProgramRecommendationRequest:84).
+          - is_urgent = 0 (이중 안전망: regularity=1과 100% 겹치지만 명시)
+          - package_sid 비어있음 (프로그램 패키지 신청서 제외 — 이중 안전망)
           - **부모 지목 없음**: requested_teacher_name 컬럼 비어있음 AND
             recommendation_teachers 에 requested=1 row 없음
             (부모가 신청서에서 특정 선생님을 콕 찍은 케이스는 자동화 대상에서 제외 —
@@ -894,6 +900,9 @@ class JarandaReplica:
               AND r.created_at <= NOW() - INTERVAL :min_age MINUTE
               AND r.lat IS NOT NULL
               AND r.lng IS NOT NULL
+              AND r.regularity = 2
+              AND r.is_urgent = 0
+              AND (r.package_sid IS NULL OR r.package_sid = '')
               AND (r.requested_teacher_name IS NULL OR r.requested_teacher_name = '')
               AND NOT EXISTS (
                 SELECT 1 FROM recommendation_teachers rt
