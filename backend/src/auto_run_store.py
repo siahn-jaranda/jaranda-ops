@@ -49,25 +49,29 @@ class AutoRunStore:
              — 운영자가 매칭-ops 대시보드에서 메모 작성
           3) matching_ops_handler.application_sid IN sids
              — 운영자가 처리담당 claim
+
+        PG ANY(:sids) 사용 (SQLAlchemy expanding bindparam을 UNION 안 3번 재사용 시
+        SQLAlchemy 가 한 placeholder만 expand 하고 나머지가 비어 NotSupportedError).
         """
         if not sids:
             return set()
+        # PG의 = ANY(text[]) — asyncpg가 Python list를 native array로 직렬화
         query = text(
             """
             SELECT recommendation_sid AS sid
               FROM matching_ops_auto_run
-             WHERE recommendation_sid IN :sids
+             WHERE recommendation_sid = ANY(:sids)
                AND dry_run = false
             UNION
             SELECT recommendation_sid AS sid
               FROM matching_ops_memo
-             WHERE recommendation_sid IN :sids
+             WHERE recommendation_sid = ANY(:sids)
             UNION
             SELECT application_sid AS sid
               FROM matching_ops_handler
-             WHERE application_sid IN :sids
+             WHERE application_sid = ANY(:sids)
             """
-        ).bindparams(bindparam("sids", expanding=True))
+        )
         async with self._session_factory() as session:
             rows = await session.execute(query, {"sids": sids})
             return {str(row._mapping["sid"]) for row in rows}
