@@ -28,9 +28,23 @@ from src.auto_run_store import auto_run_available, get_auto_run_store
 from src.config import settings
 from src.console_client import ConsoleApiError, console_available, get_console_client
 from src.db import get_replica
+from src.handler_store import get_handler_store
 from src.llm_client import AUTO_DISPATCH_SYSTEM_PROMPT, get_llm_client
 from src.llm_insight_store import get_llm_insight_store, llm_insight_available
-from src.routes.candidates import _build_input, _candidate_view, _parse_schedule
+from src.memo_store import get_memo_store
+from src.routes.candidates import (
+    SPECIALTY_NAME,
+    _build_input,
+    _candidate_view,
+    _parse_schedule,
+)
+from src.snapshot_store import get_snapshot_store
+
+# 자동 디스패치가 matching-ops 대시보드에 신청서를 노출할 때 사용하는 system identity.
+# 운영자 release/추가 메모는 별도 식별자(@matching-ops 도메인)로 구분된다.
+AUTO_BOT_EMAIL = "auto_bot@matching-ops"
+AUTO_BOT_NAME = "Auto_bot"
+AUTO_BOT_TAG = "auto-dispatch"
 
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
@@ -255,19 +269,28 @@ async def _process_one(
         logger.exception("auto_dispatch token_usage persist failed sid=%s (graceful)", sid)
 
     ranked = parsed.get("ranked") or []
+    summary = (parsed.get("summary") or "").strip()
     # LLM이 추천 풀에 없는 sid를 끼워넣을 위험 방지
     valid_sids = {c["teacher_sid"] for c in cand_views}
     top_n = settings.auto_dispatch_top_n
-    top_sids: list[str] = []
-    top_names: list[str] = []
+    top_items: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for r in ranked:
         ts = str(r.get("teacher_sid") or "")
-        if not ts or ts not in valid_sids or ts in top_sids:
+        if not ts or ts not in valid_sids or ts in seen:
             continue
-        top_sids.append(ts)
-        top_names.append(str(r.get("name") or ""))
-        if len(top_sids) >= top_n:
+        seen.add(ts)
+        top_items.append({
+            "teacher_sid": ts,
+            "name": str(r.get("name") or ""),
+            "rank": r.get("rank"),
+            "reason": (r.get("reason") or "").strip(),
+            "caution": (r.get("caution") or "").strip(),
+        })
+        if len(top_items) >= top_n:
             break
+    top_sids = [t["teacher_sid"] for t in top_items]
+    top_names = [t["name"] for t in top_items]
 
     if not top_sids:
         await store.record_run(
@@ -350,6 +373,19 @@ async def _process_one(
                 f"visit_offers_failed: status={e.status} body={e.body!r}"[:600]
             )
 
+    # matching-ops 대시보드에 노출 (memo·handler·snapshot) — 부수효과 발생한 경우만
+    dashboard_ok: dict[str, bool] = {"memo": False, "handler": False, "snapshot": False}
+    if succeed_count > 0:
+        dashboard_ok = await _record_dashboard(
+            sid=sid,
+            spec=spec,
+            summary=summary,
+            top_items=top_items,
+            pool_size=len(filtered),
+            cooldown_removed=cooldown_removed,
+            replica=replica,
+        )
+
     await store.record_run(
         recommendation_sid=sid, dry_run=False,
         pool_size=len(filtered), added_count=len(top_sids),
@@ -369,8 +405,94 @@ async def _process_one(
         "denied_count": len(denied),
         "memo_ok": memo_ok,
         "visit_offers_called": visit_offers_called,
+        "dashboard": dashboard_ok,
         "error": err,
     }
+
+
+async def _record_dashboard(
+    *,
+    sid: str,
+    spec: int,
+    summary: str,
+    top_items: list[dict[str, Any]],
+    pool_size: int,
+    cooldown_removed: int,
+    replica,
+) -> dict[str, bool]:
+    """라이브 처리 후 matching-ops 대시보드에 신청서를 노출.
+
+    - matching_ops_memo: 자동 처리 메모 (Auto_bot 작성, LLM 선정 사유 포함)
+    - matching_ops_handler: Auto_bot 으로 claim (운영자 release 가능)
+    - matching_ops_application_snapshot: 메모 라우트의 _ensure_snapshot 패턴 차용
+
+    각 단계 graceful — 실패해도 본 호출 흐름은 진행. 반환 {memo, handler, snapshot}.
+    """
+    out = {"memo": False, "handler": False, "snapshot": False}
+    subject_name = SPECIALTY_NAME.get(spec, "?")
+    cap = settings.auto_dispatch_teacher_daily_cap
+
+    lines = [
+        f"[AI매칭 자동] LLM 추천 {len(top_items)}명 추가 + 방문제안 발송",
+        "",
+        "선정 기준:",
+        "• 신청서: 정기수업(regularity=2) · 지원·수락 0명 · 부모 지목 없음 · 생성 후 1시간 이상",
+        f"• 후보 풀: 부모 좌표 인근 시군구 3개 · 과목={subject_name} · 활동중(2) 선생님만",
+        f"• cooldown: 오늘 추천 알림 ≥{cap}건 받은 선생님 사전 제외",
+        f"• 풀 규모: {pool_size}명 (cooldown {cooldown_removed}명 제외 후)",
+        f"• 모델: {settings.llm_recommend_model_id} (요일 매치·경력·추천율·여력 기준)",
+    ]
+    if summary:
+        lines += ["", f"LLM 요약: {summary}"]
+    if top_items:
+        lines += ["", "선정 사유:"]
+        for t in top_items:
+            head = f"{t.get('rank') or '?'}. {t.get('name') or '?'}"
+            reason = t.get("reason") or ""
+            caution = t.get("caution") or ""
+            line = head + (f" — {reason}" if reason else "")
+            if caution:
+                line += f" (주의: {caution})"
+            lines.append(line)
+    content = "\n".join(lines)
+
+    try:
+        await get_memo_store().create_memo(
+            application_sid=sid,
+            author_email=AUTO_BOT_EMAIL,
+            author_name=AUTO_BOT_NAME,
+            content=content,
+            tags=[AUTO_BOT_TAG],
+        )
+        out["memo"] = True
+    except Exception:
+        logger.exception("auto_dispatch dashboard memo failed sid=%s (graceful)", sid)
+
+    try:
+        await get_handler_store().claim(
+            application_sid=sid,
+            handler_email=AUTO_BOT_EMAIL,
+            handler_name=AUTO_BOT_NAME,
+        )
+        out["handler"] = True
+    except Exception:
+        logger.exception("auto_dispatch dashboard handler failed sid=%s (graceful)", sid)
+
+    try:
+        # memo 라우트의 _ensure_snapshot 패턴: replica 신청서 + subject/wage 머지 → freeze
+        from src.routes.applications import get_subject_map, to_snapshot_fields
+
+        rec = await replica.get_recommendation(sid)
+        if rec is not None:
+            subject_map = await get_subject_map()
+            wage_types = (await replica.list_wage_ranges([sid])).get(sid)
+            fields = to_snapshot_fields(rec, subject_map, wage_types)
+            await get_snapshot_store().insert_if_absent(sid, fields)
+            out["snapshot"] = True
+    except Exception:
+        logger.exception("auto_dispatch dashboard snapshot failed sid=%s (graceful)", sid)
+
+    return out
 
 
 def _make_summary(
