@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     auto_dispatch_enabled: bool = False         # 기본 OFF — 트리거 자체 차단
     auto_dispatch_dry_run: bool = True          # 기본 ON — 콘솔 쓰기 안 함 (필터·LLM만)
     auto_dispatch_daily_max_apps: int = 5       # 초기 5, 단계적 상향
-    auto_dispatch_min_age_minutes: int = 60     # 생성 후 1시간 이상 경과
+    auto_dispatch_min_age_minutes: int = 180    # 생성 후 3시간 이상 경과 (운영자 수동 처리 여유)
     auto_dispatch_top_n: int = 20               # 상위 N명 추가·발송
     auto_dispatch_teacher_daily_cap: int = 3    # 선생님 일일 추천 알림 N건 이상 = 후보 풀 제외
     auto_dispatch_admin_emails: str = ""        # 수동 트리거 허용 운영자 (쉼표 구분). 빈 값=모두 허용
