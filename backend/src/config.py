@@ -46,9 +46,35 @@ class Settings(BaseSettings):
     firestore_project: str = ""
     firestore_enabled: bool = False
 
+    # 자란다 콘솔 쓰기 API — 선생님 추가/메모/방문제안 발송.
+    # vibe-cs와 동일 counselor 계정 재사용. 단, 쓰기 base는 prod 명시
+    # (vibe-cs는 의도적으로 dev=japi-dev.jaranda.kr 사용 중 — 운영 변경 방지).
+    console_api_base: str = "https://japi.jaranda.kr"        # 로그인용
+    console_api_base_write: str = "https://japi.jaranda.kr"  # 쓰기용 — prod
+    console_username: str = ""
+    console_password: str = ""
+    console_api_timeout: int = 30
+    console_token_ttl_hours: int = 24 * 9  # 9일 (vibe-cs 동일)
+
+    # 자동 디스패치 (KST 09-18 매시. cron은 마지막에 등록).
+    # 운영 가드: kill switch + dry-run 기본 ON. live 전환은 명시적 env 변경 필요.
+    auto_dispatch_enabled: bool = False         # 기본 OFF — 트리거 자체 차단
+    auto_dispatch_dry_run: bool = True          # 기본 ON — 콘솔 쓰기 안 함 (필터·LLM만)
+    auto_dispatch_daily_max_apps: int = 5       # 초기 5, 단계적 상향
+    auto_dispatch_min_age_minutes: int = 60     # 생성 후 1시간 이상 경과
+    auto_dispatch_top_n: int = 20               # 상위 N명 추가·발송
+    auto_dispatch_teacher_daily_cap: int = 3    # 선생님 일일 추천 알림 N건 이상 = 후보 풀 제외
+    auto_dispatch_admin_emails: str = ""        # 수동 트리거 허용 운영자 (쉼표 구분). 빈 값=모두 허용
+    auto_dispatch_slack_webhook: str = ""       # 슬랙 알림 URL (옵션)
+    auto_dispatch_trigger_secret: str = ""      # X-Trigger-Secret 헤더 우회 (CLI·Cloud Scheduler용)
+
     @property
     def origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    @property
+    def auto_dispatch_admin_emails_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.auto_dispatch_admin_emails.split(",") if e.strip()]
 
 
 settings = Settings()

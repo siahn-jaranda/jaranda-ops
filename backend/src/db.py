@@ -841,6 +841,102 @@ class JarandaReplica:
         cands.sort(key=lambda c: (0 if c["closed_count"] > 0 else 1, -c["unmatched_count"]))
         return cands[:limit]
 
+    async def list_auto_dispatch_candidates(
+        self, min_age_minutes: int = 60, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """자동 디스패치 1차 필터 (replica MySQL).
+
+        조건:
+          - status = 10 (ACCEPTED)
+          - created_at <= NOW() - INTERVAL N MINUTE  (생성 후 N분 이상 경과)
+          - NOT EXISTS recommendation_teachers (지목 선생님 0명)
+          - lat/lng NOT NULL (거리 매칭 필수)
+
+        candidates.py 루트와 동일한 필드 풀 셀렉트 → 호출자는 _parse_schedule /
+        list_candidate_teachers 로 그대로 넘길 수 있음.
+
+        matching-ops PG 의 auto_run / memo / handler 제외는 별도 단계
+        (auto_run_store.get_excluded_sids).
+        """
+        query = text(
+            """
+            SELECT
+              r.sid,
+              r.parent_account_sid,
+              r.parent_name,
+              r.child_name,
+              r.status,
+              r.teacher_appliable,
+              r.deadline_at,
+              r.created_at,
+              r.is_urgent,
+              r.estimated_charge,
+              r.parent_request_to_teacher,
+              r.biweekly,
+              r.regular_visit_term,
+              r.schedule,
+              r.preferable_teacher_gender,
+              r.preferable_teacher_characteristics,
+              r.parent_address,
+              r.lat,
+              r.lng,
+              r.regularity,
+              r.teacher_specialties,
+              0 AS applied_count
+            FROM recommendation r
+            WHERE r.status = 10
+              AND r.created_at <= NOW() - INTERVAL :min_age MINUTE
+              AND r.lat IS NOT NULL
+              AND r.lng IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM recommendation_teachers rt
+                WHERE rt.recommendation_sid = r.sid
+              )
+            ORDER BY r.created_at ASC
+            LIMIT :limit
+            """
+        )
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                query, {"min_age": min_age_minutes, "limit": limit}
+            )
+            return [dict(row._mapping) for row in rows]
+
+    async def count_today_teacher_recommendations(
+        self, teacher_sids: list[str]
+    ) -> dict[str, int]:
+        """선생님별 KST 오늘(자정~현재) '수업 추천' 알림 발송 수.
+
+        fcm_send_history.app_type='TEACHER' AND push_name LIKE '선생님_수업요청%'
+        기준 — 일반(`선생님_수업요청_일반`) + 플래너(`선생님_수업요청_플래너`) 둘 다 포함.
+        알림톡(긴급돌봄 teacher_urgent_request)은 별도 테이블이라 1차 미포함;
+        FCM 이 비-긴급의 주 채널이라 cooldown 핵심 신호로 충분. 추후 보강 여지.
+
+        MySQL 서버 시간대가 KST(jaranda prod)면 CURDATE()=KST 오늘 자정.
+        """
+        if not teacher_sids:
+            return {}
+        query = text(
+            """
+            SELECT
+              receiver_id AS teacher_sid,
+              COUNT(*) AS cnt
+            FROM fcm_send_history
+            WHERE app_type = 'TEACHER'
+              AND push_name LIKE '선생님_수업요청%'
+              AND receiver_id IN :tsids
+              AND sent_at >= CURDATE()
+            GROUP BY receiver_id
+            """
+        ).bindparams(bindparam("tsids", expanding=True))
+        result: dict[str, int] = {}
+        async with self._session_factory() as session:
+            rows = await session.execute(query, {"tsids": teacher_sids})
+            for row in rows:
+                m = row._mapping
+                result[str(m["teacher_sid"])] = int(m["cnt"] or 0)
+        return result
+
 
 _replica: JarandaReplica | None = None
 

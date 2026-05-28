@@ -14,7 +14,15 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from src import auth
 from src.config import settings
-from src.routes import applications, candidates, handlers, insights, managed, memos
+from src.routes import (
+    applications,
+    auto_dispatch,
+    candidates,
+    handlers,
+    insights,
+    managed,
+    memos,
+)
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -56,6 +64,10 @@ app.include_router(insights.router, dependencies=[Depends(auth.require_auth)])
 
 # 지원 0개 신청서 선생님 추천 (WELL2-100) — POST 호출당 비용, 일일 한도 공유.
 app.include_router(candidates.router, dependencies=[Depends(auth.require_auth)])
+
+# 자동 디스패치 — 지원 0 신청서에 LLM 추천 N명 자동 추가 + 방문 제안 발송.
+# 라우트 내부에서 require_auth_full(운영자 email 기록용) + kill switch 가드.
+app.include_router(auto_dispatch.router)
 
 
 @app.get("/")
