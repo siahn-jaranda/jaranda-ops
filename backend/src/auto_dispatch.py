@@ -38,7 +38,8 @@ KST = timezone(timedelta(hours=9))
 # 신청서 1건당 LLM 입력 후보 풀 상한. cooldown 제외 후 top_n 채울 여유.
 _RAW_POOL_LIMIT = 50
 # LLM 응답 max_tokens — 상위 20명 ranking은 RECOMMEND(5~7) 대비 더 필요.
-_LLM_MAX_TOKENS = 2048
+# 한 item ~80 token × 20 + summary/note → 약 1700-2000. 안전하게 4096.
+_LLM_MAX_TOKENS = 4096
 
 
 class AutoDispatchUnavailable(RuntimeError):
@@ -226,11 +227,17 @@ async def _process_one(
 
     payload = _build_input(app, cand_views)
     try:
-        _, parsed, in_tok, out_tok = await llm.generate_recommendation(
+        raw_text, parsed, in_tok, out_tok = await llm.generate_recommendation(
             payload,
             max_tokens=_LLM_MAX_TOKENS,
             system_prompt=AUTO_DISPATCH_SYSTEM_PROMPT,
         )
+        # JSON parse 실패 시 raw_text 앞 일부를 로그에 남겨 디버깅
+        if not parsed and raw_text:
+            logger.warning(
+                "auto_dispatch LLM parse empty sid=%s len=%d head=%r tail=%r",
+                sid, len(raw_text), raw_text[:200], raw_text[-200:],
+            )
     except Exception as e:
         logger.exception("auto_dispatch LLM call failed sid=%s", sid)
         await store.record_run(
