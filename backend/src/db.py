@@ -849,11 +849,17 @@ class JarandaReplica:
         조건:
           - status = 10 (ACCEPTED)
           - created_at <= NOW() - INTERVAL N MINUTE  (생성 후 N분 이상 경과)
-          - NOT EXISTS recommendation_teachers (지목 선생님 0명)
           - lat/lng NOT NULL (거리 매칭 필수)
+          - **부모 지목 없음**: requested_teacher_name 컬럼 비어있음 AND
+            recommendation_teachers 에 requested=1 row 없음
+            (부모가 신청서에서 특정 선생님을 콕 찍은 케이스는 자동화 대상에서 제외 —
+            의향이 분명한 신청서를 시스템이 흔들지 않음)
+          - **지원·수락 0명**: recommendation_teachers 에 applied=1 OR accepted=1
+            row 없음 (운영자가 추천한 선생님이 있어도 응답이 없으면 자동화 대상)
 
-        candidates.py 루트와 동일한 필드 풀 셀렉트 → 호출자는 _parse_schedule /
-        list_candidate_teachers 로 그대로 넘길 수 있음.
+        candidates.py 라우트와 동일한 필드 풀 셀렉트 → 호출자는 _parse_schedule /
+        list_candidate_teachers 로 그대로 넘길 수 있음. list_candidate_teachers 가
+        이미 신청서에 있는 선생님은 자동 제외(db.py 의 NOT EXISTS rt) — 중복 안전.
 
         matching-ops PG 의 auto_run / memo / handler 제외는 별도 단계
         (auto_run_store.get_excluded_sids).
@@ -888,9 +894,16 @@ class JarandaReplica:
               AND r.created_at <= NOW() - INTERVAL :min_age MINUTE
               AND r.lat IS NOT NULL
               AND r.lng IS NOT NULL
+              AND (r.requested_teacher_name IS NULL OR r.requested_teacher_name = '')
               AND NOT EXISTS (
                 SELECT 1 FROM recommendation_teachers rt
                 WHERE rt.recommendation_sid = r.sid
+                  AND rt.requested = 1
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM recommendation_teachers rt
+                WHERE rt.recommendation_sid = r.sid
+                  AND (rt.applied = 1 OR rt.accepted = 1)
               )
             ORDER BY r.created_at ASC
             LIMIT :limit
