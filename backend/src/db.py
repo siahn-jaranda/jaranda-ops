@@ -679,6 +679,7 @@ class JarandaReplica:
             LEFT JOIN account a ON a.sid = t.account_sid
             WHERE tps.legal_dong_code IN :gu_codes
               AND t.activity_status IN :statuses
+              AND t.searchable = 1
               AND t.{intro_col} IS NOT NULL AND TRIM(t.{intro_col}) <> ''
               AND NOT EXISTS (
                 SELECT 1 FROM recommendation_teachers rt
@@ -817,6 +818,7 @@ class JarandaReplica:
               ON w.teacher_account_sid = t.account_sid AND w.subject_wage_id = :subject_id
             WHERE t.account_sid IN :tsids
               AND t.activity_status IN :statuses
+              AND t.searchable = 1
             GROUP BY t.account_sid
             """
         ).bindparams(
