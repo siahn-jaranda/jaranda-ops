@@ -76,6 +76,17 @@ async def release_handler(
             status_code=403,
             detail={"reason": "not_owner", "handler": current},
         )
+    # release 성공 후 — handler 0 + memo 0이면 snapshot 정리 (관리 목록에서 자연 빠짐).
+    # list_managed 가 메모 OR handler driving 이므로 둘 다 없으면 어차피 노출 안 됨.
+    # graceful — 실패해도 release 결과는 OK.
+    try:
+        from src.routes.memos import _maybe_drop_snapshot
+
+        await _maybe_drop_snapshot(raw_sid)
+    except Exception:
+        logger.exception(
+            "snapshot cleanup after handler release failed sid=%s (graceful)", raw_sid
+        )
     return {"released": True}
 
 
