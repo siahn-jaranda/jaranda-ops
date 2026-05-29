@@ -150,17 +150,43 @@ class SnapshotStore:
             return (result.rowcount or 0) > 0
 
     async def list_managed(self, limit: int = 100) -> list[dict[str, Any]]:
-        """관리 신청서 목록 — 메모 있는 sid 기준, 최근 메모 작성순.
+        """관리 신청서 목록 — 활성 메모 OR handler 잡힌 sid 기준, 최근 활동 시각순.
 
-        memo가 driving table. snapshot은 LEFT JOIN — _ensure_snapshot이 첫 메모
-        시점에 fetch 실패했던 row(예: replica 윈도우 밖 신청서)도 메모만 있으면 노출.
-        snapshot 누락 시 child_name 등은 NULL → _row_to_dict의 default가 채움.
+        driving = (활성 메모 있는 sid) ∪ (handler 잡힌 sid). 둘 중 하나라도 있으면 노출.
+        - 운영자가 마지막 메모를 삭제해도 handler 잡혀있으면 보존 (자동 디스패치 흔적
+          또는 운영자 처리 담당)
+        - 자동 디스패치된 신청서(Auto_bot memo + handler)는 메모 삭제돼도 노출 유지
+
+        snapshot은 LEFT JOIN — 첫 메모 시점에 fetch 실패했던 row(예: replica 윈도우
+        밖)도 활동만 있으면 노출. snapshot 누락 시 child_name 등은 NULL.
         결과 row: (snapshot 필드 nullable) + memo_count + last_memo_at + handler.
         """
         query = text(
             """
+            WITH activity AS (
+              SELECT application_sid, MAX(created_at) AS last_activity
+                FROM matching_ops_memo
+               WHERE deleted_at IS NULL
+               GROUP BY application_sid
+              UNION ALL
+              SELECT application_sid, claimed_at AS last_activity
+                FROM matching_ops_handler
+            ),
+            driving AS (
+              SELECT application_sid, MAX(last_activity) AS last_activity
+                FROM activity
+               GROUP BY application_sid
+            ),
+            memo_stats AS (
+              SELECT application_sid,
+                     COUNT(*) AS memo_count,
+                     MAX(created_at) AS last_memo_at
+                FROM matching_ops_memo
+               WHERE deleted_at IS NULL
+               GROUP BY application_sid
+            )
             SELECT
-              mm.application_sid,
+              d.application_sid,
               s.child_name, s.region, s.status_key, s.status_label,
               s.subjects, s.wage_ranges,
               s.request_chips, s.parent_request, s.matched_teacher,
@@ -168,19 +194,14 @@ class SnapshotStore:
               s.app_created_at, s.app_deadline_at,
               s.app_confirmed_at, s.app_cancelled_at,
               s.snapshot_at, s.snapshot_updated_at,
-              mm.memo_count, mm.last_memo_at,
+              COALESCE(ms.memo_count, 0) AS memo_count,
+              ms.last_memo_at,
               h.handler_email, h.handler_name, h.claimed_at AS handler_claimed_at
-            FROM (
-              SELECT application_sid,
-                     COUNT(*) AS memo_count,
-                     MAX(created_at) AS last_memo_at
-              FROM matching_ops_memo
-              WHERE deleted_at IS NULL
-              GROUP BY application_sid
-            ) mm
-            LEFT JOIN matching_ops_application_snapshot s ON s.application_sid = mm.application_sid
-            LEFT JOIN matching_ops_handler h ON h.application_sid = mm.application_sid
-            ORDER BY mm.last_memo_at DESC
+            FROM driving d
+            LEFT JOIN matching_ops_application_snapshot s ON s.application_sid = d.application_sid
+            LEFT JOIN matching_ops_handler h ON h.application_sid = d.application_sid
+            LEFT JOIN memo_stats ms ON ms.application_sid = d.application_sid
+            ORDER BY d.last_activity DESC
             LIMIT :limit
             """
         )

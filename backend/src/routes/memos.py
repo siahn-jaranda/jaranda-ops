@@ -73,13 +73,32 @@ async def _ensure_snapshot(raw_sid: str) -> None:
 
 
 async def _maybe_drop_snapshot(raw_sid: str) -> None:
-    """잔여 메모 0건이면 snapshot도 제거 — '메모 있는 동안만 이력 보존' 정책."""
+    """잔여 메모 0건 AND handler 없음 일 때만 snapshot 제거.
+
+    handler가 잡혀있으면(운영자 claim 또는 자동 디스패치 Auto_bot) 이력 유지 —
+    list_managed 가 메모/handler OR 로 driving 하므로 handler 만으로도 노출 가능.
+    이전 정책(메모만 검사)은 운영자가 마지막 메모 1건 삭제 시 신청서가 영구 소실되는
+    문제가 있었다 (2026-05-29 발견).
+    """
     if not snapshot_store_available():
         return
     try:
         store = get_snapshot_store()
-        if await store.memo_count(raw_sid) == 0:
-            await store.delete(raw_sid)
+        if await store.memo_count(raw_sid) > 0:
+            return
+        # handler 검사 — 잡혀있으면 보존
+        try:
+            from src.handler_store import get_handler_store
+
+            handler = await get_handler_store().get(raw_sid)
+            if handler is not None:
+                return
+        except Exception:
+            logger.warning(
+                "handler check before snapshot drop failed sid=%s (proceeding)",
+                raw_sid,
+            )
+        await store.delete(raw_sid)
     except Exception:
         logger.exception("snapshot drop failed sid=%s (graceful)", raw_sid)
 
