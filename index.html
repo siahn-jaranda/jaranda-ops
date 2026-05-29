@@ -1397,7 +1397,8 @@ async function loadManagedData(force) {
     if (r.status === 401) { showGate('세션이 만료되었습니다. 다시 로그인해주세요.'); return; }
     if (!r.ok) throw new Error('managed-api ' + r.status);
     const data = await r.json();
-    MANAGED = (data.rows || []).map(snapshotToApp);
+    // 응답이 메인과 동일 shape → 같은 backendToApp 사용 (snapshotToApp deprecated)
+    MANAGED = (data.rows || []).map(backendToApp);
     managedLoadedAt = Date.now();
     managedInitialLoading = false;
     renderManaged();
@@ -1412,18 +1413,20 @@ async function loadManagedData(force) {
 function renderManaged() {
   document.getElementById('managed-count-chip').textContent = `전체 ${MANAGED.length}건`;
   const listArea = document.getElementById('managed-list-area');
+  const detailArea = document.getElementById('managed-detail-area');
   if (MANAGED.length === 0) {
     if (managedInitialLoading) {
       listArea.innerHTML = renderSkeletonCards(4);
     } else {
       listArea.innerHTML = `<div class="empty-feed">메모가 작성된 신청서가 아직 없습니다.</div>`;
     }
-    document.getElementById('managed-detail-area').innerHTML = '';
+    detailArea.innerHTML = '';
     return;
   }
   listArea.innerHTML = renderCardView(MANAGED);
-  // 상세 패널: 관리 페이지에선 우측 컬럼 비워두기 (메모 모달이 주된 액션)
-  document.getElementById('managed-detail-area').innerHTML = '';
+  // 상세 패널 — 메인과 동일하게 selectedId 기준
+  const sel = MANAGED.find(a => a.id === state.selectedId) || null;
+  detailArea.innerHTML = renderDetailPanel(sel);
 }
 
 // ====== ATOMIC COMPONENTS ======
@@ -2116,13 +2119,13 @@ function render() {
 }
 
 function selectApp(id) {
-  // 관리 신청서 목록에선 카드 클릭 = 메모 모달 (상세 패널이 그 페이지엔 없음)
-  if (state.tab === 'managed') {
-    if (id) openMemoModal(id);
-    return;
-  }
   state.selectedId = id;
-  render();
+  // 관리 탭: 자체 renderManaged 가 상세 패널 처리. 메인 탭: render().
+  if (state.tab === 'managed') {
+    renderManaged();
+  } else {
+    render();
+  }
   if (id) loadCachedInsight(id);
 }
 function setSort(key) {
