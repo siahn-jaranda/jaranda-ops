@@ -56,8 +56,8 @@ app.include_router(memos.router, dependencies=[Depends(auth.require_auth)])
 # 처리 담당 claim/release — 라우트 내부에서 require_auth_full로 본인 식별
 app.include_router(handlers.router, dependencies=[Depends(auth.require_auth)])
 
-# 관리 신청서 목록 — 메모 영속화된 신청서 (snapshot 기반)
-app.include_router(managed.router, dependencies=[Depends(auth.require_auth)])
+# 관리 신청서 목록 — 라우트 내부에서 trigger_auth 사용 (Google 세션 OR X-Trigger-Secret)
+app.include_router(managed.router)
 
 # LLM 인사이트 — POST는 호출당 비용. 라우트 내부에서 일일 한도 가드.
 app.include_router(insights.router, dependencies=[Depends(auth.require_auth)])

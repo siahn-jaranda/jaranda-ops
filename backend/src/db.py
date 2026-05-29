@@ -43,19 +43,29 @@ class JarandaReplica:
         offset: int = 0,
         date_from: str | None = None,
         date_to: str | None = None,
+        sids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """신청서 목록.
 
         - date_from/date_to (YYYY-MM-DD, KST) 주면 created_at 기준 [from 00:00, to 23:59:59] 범위.
           한쪽만 주면 그쪽만 조건으로 사용. 둘 다 없으면 최근 N시간 윈도우(settings).
+        - sids 주면 그 sid 리스트만 조회 (윈도우 무관 — 관리 신청서 목록용).
         - status 101 (임시저장) 항상 제외
         - ORDER BY created_at DESC, sid (안정 정렬) — 페이지네이션용
         - offset/limit 지원 (페이지네이션)
         """
         where = ["r.status != 101"]
         params: dict[str, Any] = {"limit": limit, "offset": offset}
+        bindparams: list[Any] = []
 
-        if date_from or date_to:
+        if sids is not None:
+            if not sids:
+                return []
+            # sids 지정 시 윈도우/date 필터 무시 — 관리 신청서 목록은 오래된 신청서도 포함
+            where.append("r.sid IN :sids")
+            params["sids"] = sids
+            bindparams.append(bindparam("sids", expanding=True))
+        elif date_from or date_to:
             if date_from:
                 where.append("r.created_at >= :date_from")
                 params["date_from"] = f"{date_from} 00:00:00"
@@ -121,6 +131,8 @@ class JarandaReplica:
             LIMIT :limit OFFSET :offset
             """
         )
+        if bindparams:
+            query = query.bindparams(*bindparams)
         async with self._session_factory() as session:
             result = await session.execute(query, params)
             return [dict(row._mapping) for row in result]
