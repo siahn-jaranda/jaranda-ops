@@ -85,10 +85,13 @@ async def run_once(
     llm = get_llm_client()
     console = get_console_client()
 
-    # 1) replica 1차 필터 (cap의 5배 확보 → PG 제외 후 cap 충분)
+    # 1) replica 1차 필터 — 항상 충분히 큰 LIMIT.
+    # 이전 max(cap*5, 10) 은 max_apps=1·daily_cap=30 같이 가속된 환경에서
+    # raw=10건 모두 이전 라이브 처리로 excluded → eligible=0 으로 매 cron 스킵
+    # (2026-06-01 KST 17:00~ 발견). 모수가 20-30건 수준이라 200 으로 여유 확보.
     raw = await replica.list_auto_dispatch_candidates(
         min_age_minutes=settings.auto_dispatch_min_age_minutes,
-        limit=max(requested_cap * 5, 10),
+        limit=max(requested_cap * 50, 200),
     )
     sids_pre = [r["sid"] for r in raw]
     logger.info("auto_dispatch step1 raw_candidates=%d", len(sids_pre))
