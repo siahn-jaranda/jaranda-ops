@@ -15,6 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from src import auth
 from src.config import settings
 from src.routes import (
+    aggregated_insights,
     applications,
     auto_dispatch,
     candidates,
@@ -68,6 +69,9 @@ app.include_router(candidates.router, dependencies=[Depends(auth.require_auth)])
 # 자동 디스패치 — 지원 0 신청서에 LLM 추천 N명 자동 추가 + 방문 제안 발송.
 # 라우트 내부에서 require_auth_full(운영자 email 기록용) + kill switch 가드.
 app.include_router(auto_dispatch.router)
+
+# 메모 집계 인사이트 — 필터 5종 + LLM. 라우트 내부 trigger_auth.
+app.include_router(aggregated_insights.router)
 
 
 @app.get("/")

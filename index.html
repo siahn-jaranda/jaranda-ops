@@ -784,34 +784,45 @@ input, textarea, select { font-family: inherit; }
     <div class="insight-card">
       <div class="insight-head">
         <span class="title">인사이트 도출</span>
-        <span class="sub">담당자 메모를 모아 패턴·시사점을 도출합니다</span>
+        <span class="sub">메모를 필터링하여 패턴·핵심 인사이트·액션을 LLM으로 도출</span>
       </div>
-      <div class="insight-grid">
-        <div class="insight-block">
-          <div class="section-label" style="margin-bottom:10px">메모 작성</div>
-          <textarea id="insight-memo" placeholder="이번 매칭에서 관찰한 패턴을 적어주세요"></textarea>
-          <div class="tag-chips">
-            <span class="tag-chip" onclick="toggleTag(this)">#지역</span>
-            <span class="tag-chip" onclick="toggleTag(this)">#신규부모님</span>
-            <span class="tag-chip" onclick="toggleTag(this)">#재이용</span>
-            <span class="tag-chip" onclick="toggleTag(this)">#응답속도</span>
-            <span class="tag-chip" onclick="toggleTag(this)">#기타</span>
-          </div>
-          <div style="display:flex;justify-content:flex-end;margin-top:12px">
-            <button class="btn btn-primary" onclick="saveMemo()">메모 저장</button>
+      <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin:6px 0 14px">
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:200px">
+          <span style="font-size:11.5px;font-weight:700;color:#6B7280">메모 태그</span>
+          <div id="ins-tag-chips" style="display:flex;flex-wrap:wrap;gap:6px;min-height:30px;padding:4px 0">
+            <span style="font-size:12px;color:#9CA3AF">로딩 중…</span>
           </div>
         </div>
-        <div class="insight-block gray">
-          <div class="section-label" style="margin-bottom:10px">LLM 인사이트</div>
-          <div style="font-size:13.5px;color:#1E2530;line-height:1.55">
-            현재 피드의 메모 <b id="memo-count">0</b>건을 묶어 테마 클러스터·핵심 인사이트·제안 액션을 생성합니다.
-          </div>
-          <div style="margin-top:14px">
-            <button class="btn btn-primary" onclick="deriveInsights()">인사이트 도출하기</button>
-          </div>
-          <div class="empty-feed" id="insight-result">메모를 모아 "인사이트 도출하기"를 눌러주세요.</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:11.5px;font-weight:700;color:#6B7280">부모님</span>
+          <select id="ins-parent-type" style="padding:7px 10px;border:1px solid #D7DCE3;border-radius:6px;font-size:13px;min-width:140px">
+            <option value="">전체</option>
+            <option value="new">신규</option>
+            <option value="repeat">기존(재이용)</option>
+          </select>
         </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:11.5px;font-weight:700;color:#6B7280">지역</span>
+          <select id="ins-region" style="padding:7px 10px;border:1px solid #D7DCE3;border-radius:6px;font-size:13px;min-width:140px">
+            <option value="">전체</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:11.5px;font-weight:700;color:#6B7280">과목</span>
+          <select id="ins-subject" style="padding:7px 10px;border:1px solid #D7DCE3;border-radius:6px;font-size:13px;min-width:140px">
+            <option value="">전체</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:11.5px;font-weight:700;color:#6B7280">부모 시급</span>
+          <select id="ins-wage" style="padding:7px 10px;border:1px solid #D7DCE3;border-radius:6px;font-size:13px;min-width:160px">
+            <option value="">전체</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="ins-derive-btn" onclick="deriveInsights()" style="height:34px">인사이트 도출하기</button>
+        <button class="btn btn-secondary" onclick="resetInsightFilters()" style="height:34px">초기화</button>
       </div>
+      <div id="insight-result" class="empty-feed" style="margin-top:6px">필터 선택 후 "인사이트 도출하기"를 눌러주세요.</div>
     </div>
   </main>
 </div>
@@ -2156,6 +2167,7 @@ function switchTab(t) {
   document.getElementById('page-managed').style.display = t === 'managed' ? '' : 'none';
   document.getElementById('page-insight').style.display = t === 'insight' ? '' : 'none';
   if (t === 'managed') loadManagedData();
+  if (t === 'insight') loadInsightOptions();
 }
 
 // ====== OWNER DROPDOWN ======
@@ -2571,21 +2583,143 @@ async function runRecovery(sid) {
   }
 }
 
-function deriveInsights() {
+// === 메모 집계 인사이트 ===
+let insightOptionsLoaded = false;
+const insightSelectedTags = new Set();
+
+async function loadInsightOptions() {
+  if (insightOptionsLoaded) return;
+  try {
+    const r = await fetch(API_BASE + '/api/aggregated-insights/options', {
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    if (!r.ok) throw new Error('options ' + r.status);
+    const d = await r.json();
+    // tag chips
+    const tagBox = document.getElementById('ins-tag-chips');
+    if (!d.tags || !d.tags.length) {
+      tagBox.innerHTML = '<span style="font-size:12px;color:#9CA3AF">사용 가능한 태그 없음</span>';
+    } else {
+      tagBox.innerHTML = d.tags.map(t =>
+        `<span class="tag-chip" data-tag="${escapeHtml(t)}" onclick="toggleInsightTag(this)">#${escapeHtml(t)}</span>`
+      ).join('');
+    }
+    const regionSel = document.getElementById('ins-region');
+    regionSel.innerHTML = '<option value="">전체</option>' + (d.regions || []).map(r =>
+      `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`
+    ).join('');
+    const subjSel = document.getElementById('ins-subject');
+    subjSel.innerHTML = '<option value="">전체</option>' + (d.subjects || []).map(s =>
+      `<option value="${s.id}">${escapeHtml(s.name)}</option>`
+    ).join('');
+    const wageSel = document.getElementById('ins-wage');
+    wageSel.innerHTML = '<option value="">전체</option>' + (d.wage_ranges || []).map(w =>
+      `<option value="${escapeHtml(w.code)}">${escapeHtml(w.label)}</option>`
+    ).join('');
+    insightOptionsLoaded = true;
+  } catch (e) {
+    console.warn('insight options load failed:', e.message);
+    document.getElementById('ins-tag-chips').innerHTML =
+      `<span style="font-size:12px;color:#B43F18">옵션 로드 실패 (${escapeHtml(e.message)})</span>`;
+  }
+}
+
+function toggleInsightTag(el) {
+  const t = el.dataset.tag;
+  if (insightSelectedTags.has(t)) {
+    insightSelectedTags.delete(t);
+    el.classList.remove('selected');
+  } else {
+    insightSelectedTags.add(t);
+    el.classList.add('selected');
+  }
+}
+
+function resetInsightFilters() {
+  insightSelectedTags.clear();
+  document.querySelectorAll('#ins-tag-chips .tag-chip').forEach(c => c.classList.remove('selected'));
+  document.getElementById('ins-parent-type').value = '';
+  document.getElementById('ins-region').value = '';
+  document.getElementById('ins-subject').value = '';
+  document.getElementById('ins-wage').value = '';
+  document.getElementById('insight-result').textContent = '필터 선택 후 "인사이트 도출하기"를 눌러주세요.';
+  document.getElementById('insight-result').className = 'empty-feed';
+  document.getElementById('insight-result').style = 'margin-top:6px';
+}
+
+async function deriveInsights() {
   const el = document.getElementById('insight-result');
+  const btn = document.getElementById('ins-derive-btn');
+  el.className = '';
   el.style.padding = '14px';
   el.style.border = '1px solid #EEF1F4';
   el.style.background = '#fff';
   el.style.color = '#1E2530';
   el.style.textAlign = 'left';
+  el.innerHTML = '<div style="color:#6B7280;font-size:13px">메모 모으는 중… (수십 초 소요)</div>';
+  btn.disabled = true; btn.textContent = '도출 중…';
+
+  const subjVal = document.getElementById('ins-subject').value;
+  const body = {
+    tags: Array.from(insightSelectedTags),
+    region: document.getElementById('ins-region').value || null,
+    subject_id: subjVal ? Number(subjVal) : null,
+    wage_range_code: document.getElementById('ins-wage').value || null,
+    parent_type: document.getElementById('ins-parent-type').value || null,
+  };
+
+  try {
+    const r = await fetch(API_BASE + '/api/aggregated-insights/derive', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + authToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 429) { el.innerHTML = `<div style="color:#B43F18">${escapeHtml(data.detail || '일일 한도 초과')}</div>`; return; }
+    if (r.status === 503) { el.innerHTML = `<div style="color:#B43F18">${escapeHtml(data.detail || 'LLM/메모 스토어 미설정')}</div>`; return; }
+    if (!r.ok) { el.innerHTML = `<div style="color:#B43F18">호출 실패 (${r.status})</div>`; return; }
+    renderInsightResult(data);
+  } catch (e) {
+    el.innerHTML = `<div style="color:#B43F18">네트워크 오류: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '인사이트 도출하기';
+  }
+}
+
+function renderInsightResult(d) {
+  const el = document.getElementById('insight-result');
+  const themes = d.themes || [];
+  const insights = d.key_insights || [];
+  const actions = d.recommended_actions || [];
   el.innerHTML = `
-    <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px">핵심 인사이트 (mock)</div>
-    <div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px;line-height:1.55">
-      <div style="padding:8px 10px;background:#F4F8FF;border-radius:6px">• 메모 빈도 1위: 지역 가용성 (마포구·고양시 권역 동시 발견)</div>
-      <div style="padding:8px 10px;background:#FDF0CC;border-radius:6px;color:#8A5B00">• 미응답 30분 초과 → 자동 추가 발송 룰 의견 반복</div>
-      <div style="padding:8px 10px;background:#E4F5EA;border-radius:6px;color:#1F6B3C">• 재이용 7회 이상 고객 매칭 성공률 90%+</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.06em;text-transform:uppercase">분석 결과</div>
+      <div style="font-size:11.5px;color:#9CA3AF">메모 ${d.memo_count}건 · ${escapeHtml(d.model_id||'')}</div>
     </div>
-    <div style="margin-top:10px;font-size:11px;color:#9CA3AF">분석 모델: Claude (mock) · 입력 메모 ${memoCount}건</div>
+    <div style="padding:10px 12px;background:#F4F8FF;border-left:3px solid #1B4FB8;border-radius:4px;font-size:13.5px;line-height:1.55;color:#1E2530;margin-bottom:14px">
+      ${escapeHtml(d.summary || '요약 없음')}
+    </div>
+    ${themes.length ? `
+      <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.06em;text-transform:uppercase;margin:14px 0 8px">테마 클러스터</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${themes.map(t => `<div style="padding:8px 10px;background:#FAFBFC;border:1px solid #EEF1F4;border-radius:6px;font-size:12.5px;line-height:1.5">
+          <b>${escapeHtml(t.name||'?')}</b> <span style="color:#9CA3AF">· ${t.count||0}건</span>
+          ${t.note ? `<div style="margin-top:4px;color:#6B7280">${escapeHtml(t.note)}</div>` : ''}
+        </div>`).join('')}
+      </div>
+    ` : ''}
+    ${insights.length ? `
+      <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.06em;text-transform:uppercase;margin:14px 0 8px">핵심 인사이트</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${insights.map(i => `<div style="padding:8px 10px;background:#FDF0CC;border-radius:6px;color:#8A5B00;font-size:12.5px;line-height:1.5">• ${escapeHtml(i)}</div>`).join('')}
+      </div>
+    ` : ''}
+    ${actions.length ? `
+      <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.06em;text-transform:uppercase;margin:14px 0 8px">제안 액션</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${actions.map(a => `<div style="padding:8px 10px;background:#E4F5EA;border-radius:6px;color:#1F6B3C;font-size:12.5px;line-height:1.5">→ ${escapeHtml(a)}</div>`).join('')}
+      </div>
+    ` : ''}
   `;
 }
 
