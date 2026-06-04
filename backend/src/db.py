@@ -187,7 +187,13 @@ class JarandaReplica:
                 SELECT COUNT(*)
                 FROM recommendation_teachers rt
                 WHERE rt.recommendation_sid = r.sid AND rt.requested = 1
-              ) AS requested_count
+              ) AS requested_count,
+              (
+                SELECT GROUP_CONCAT(tg.name SEPARATOR ', ')
+                FROM recommendation_tag rtag
+                JOIN tag tg ON tg.id = rtag.tag_id
+                WHERE rtag.recommendation_sid = r.sid AND rtag.deleted_at IS NULL
+              ) AS subject_tag_names
             FROM recommendation r
             WHERE r.sid = :sid
             """
@@ -693,6 +699,20 @@ class JarandaReplica:
               AND t.activity_status IN :statuses
               AND t.searchable = 1
               AND t.{intro_col} IS NOT NULL AND TRIM(t.{intro_col}) <> ''
+              AND (
+                NOT EXISTS (
+                  SELECT 1 FROM recommendation_tag rtag
+                  WHERE rtag.recommendation_sid = :sid AND rtag.deleted_at IS NULL
+                )
+                OR EXISTS (
+                  SELECT 1 FROM teacher_tags tt
+                  WHERE tt.account_sid = t.account_sid AND tt.searchable = 1
+                    AND tt.tag_id IN (
+                      SELECT rtag.tag_id FROM recommendation_tag rtag
+                      WHERE rtag.recommendation_sid = :sid AND rtag.deleted_at IS NULL
+                    )
+                )
+              )
               AND NOT EXISTS (
                 SELECT 1 FROM recommendation_teachers rt
                 WHERE rt.recommendation_sid = :sid AND rt.teacher_account_sid = t.account_sid
@@ -720,6 +740,7 @@ class JarandaReplica:
 
     async def list_recovery_candidates(
         self,
+        recommendation_sid: str,
         lat: float,
         lng: float,
         subject_id: int,
@@ -831,6 +852,20 @@ class JarandaReplica:
             WHERE t.account_sid IN :tsids
               AND t.activity_status IN :statuses
               AND t.searchable = 1
+              AND (
+                NOT EXISTS (
+                  SELECT 1 FROM recommendation_tag rtag
+                  WHERE rtag.recommendation_sid = :sid AND rtag.deleted_at IS NULL
+                )
+                OR EXISTS (
+                  SELECT 1 FROM teacher_tags tt
+                  WHERE tt.account_sid = t.account_sid AND tt.searchable = 1
+                    AND tt.tag_id IN (
+                      SELECT rtag.tag_id FROM recommendation_tag rtag
+                      WHERE rtag.recommendation_sid = :sid AND rtag.deleted_at IS NULL
+                    )
+                )
+              )
             GROUP BY t.account_sid
             """
         ).bindparams(
@@ -840,7 +875,12 @@ class JarandaReplica:
         async with self._session_factory() as session:
             rows = await session.execute(
                 detail,
-                {"tsids": list(sig.keys()), "statuses": statuses, "subject_id": subject_id},
+                {
+                    "tsids": list(sig.keys()),
+                    "statuses": statuses,
+                    "subject_id": subject_id,
+                    "sid": recommendation_sid,
+                },
             )
             cands = []
             for row in rows:
@@ -908,6 +948,12 @@ class JarandaReplica:
               r.lng,
               r.regularity,
               r.teacher_specialties,
+              (
+                SELECT GROUP_CONCAT(tg.name SEPARATOR ', ')
+                FROM recommendation_tag rtag
+                JOIN tag tg ON tg.id = rtag.tag_id
+                WHERE rtag.recommendation_sid = r.sid AND rtag.deleted_at IS NULL
+              ) AS subject_tag_names,
               0 AS applied_count
             FROM recommendation r
             WHERE r.status = 10
