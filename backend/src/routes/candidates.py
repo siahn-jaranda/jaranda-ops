@@ -79,7 +79,7 @@ def _build_input(app: dict[str, Any], cand_views: list[dict[str, Any]]) -> dict[
         "application": {
             "sid": app["sid"],
             "region": (app.get("parent_address") or "").split("|")[0],
-            "subject": SPECIALTY_NAME.get(spec, "?"),
+            "subject": app.get("subject_tag_names") or SPECIALTY_NAME.get(spec, "?"),
             "want_days": sched.get("days", []),
             "time_slots": sched.get("time_label"),
             "start_date": sched.get("start_date"),
@@ -238,7 +238,7 @@ async def recommend_recovery_candidates(
     statuses = [2]  # 활동중만 (활동대기 제외)
     try:
         cands = await replica.list_recovery_candidates(
-            float(app["lat"]), float(app["lng"]), spec, statuses,
+            raw_sid, float(app["lat"]), float(app["lng"]), spec, statuses,
             radius_m=radius_m, apply_days=apply_days, close_days=close_days, limit=limit,
         )
     except Exception:
