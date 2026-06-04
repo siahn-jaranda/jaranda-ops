@@ -18,6 +18,7 @@ race: replica polling 기반이라 atomic하지 않음. console succeedCount=0 =
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -57,16 +58,15 @@ _RAW_POOL_LIMIT = 100
 _LLM_MAX_TOKENS = 4096
 
 # =====================================================================
-# A/B 4-arm 가설 (2026-06-02 분석 기반)
+# A/B 3-arm 가설 (2026-06-02 분석 기반, V3 제거 — 풀 0 위험)
 # =====================================================================
 # 모든 arm 공통 베이스: R1(reviews≥10) + R2(exp≥200, recommend≥80%) + A1(시급 매칭)
-#   V0: 베이스만 (베테랑 marginal 효과)
+#   V0: 베이스만 (베테랑·시급 marginal 효과)
 #   V1: + A2 요일 hard (≥1 매칭)
 #   V2: + A4 거리 hard (같은 시군구, n_gu=1)
-#   V3: + A2 + A4 + A5(active_kids 1-7) full 강화
-# sid hash % 4 로 할당 — matching_ops_auto_run.variant 컬럼 기록.
+# md5 hash % 3 — 균등 할당. matching_ops_auto_run.variant 컬럼 기록.
 
-_VARIANT_NGU = {0: 3, 1: 3, 2: 1, 3: 1}  # V2·V3 만 같은 시군구만 (n_gu=1)
+_VARIANT_NGU = {0: 3, 1: 3, 2: 1}  # V2 만 같은 시군구만 (n_gu=1)
 
 # A1 시급 매칭 ±20% 범위 (모든 arm 공통)
 _WAGE_RANGES = {
@@ -85,8 +85,13 @@ _DAY_KEY = {
 
 
 def _assign_variant(sid: str) -> int:
-    """sid 결정론적 4-arm 할당. abs(hash) % 4 ∈ {0,1,2,3}."""
-    return abs(hash(sid)) % 4
+    """sid 결정론적 3-arm 할당. md5(sid) 첫 4바이트 % 3 ∈ {0,1,2}.
+
+    Python builtin hash 는 PYTHONHASHSEED 영향 받아 프로세스마다 다름 → 균등성 깨질
+    위험. md5는 결정론적 + 균등 분포. % 3 편향(256/3=85.33)은 32비트 정수로 흡수.
+    """
+    h = hashlib.md5(sid.encode("utf-8")).digest()
+    return int.from_bytes(h[:4], "big") % 3
 
 
 def _vet_pass(c: dict[str, Any]) -> bool:
@@ -142,23 +147,18 @@ def _apply_variant_filter(
     wage_types: list[str],
     schedule_json: Any,
 ) -> bool:
-    """variant별 hard filter 통과 여부.
+    """variant별 hard filter 통과 여부 (3-arm).
 
     공통: R1+R2+A1 (모든 arm)
-    V1,V3: + A2 요일
-    V3: + A5 active_kids 1-7
-    V2,V3: A4는 SQL 단계에서 n_gu=1 로 이미 적용 (별도 체크 불필요)
+    V1: + A2 요일
+    V2: A4는 SQL 단계에서 n_gu=1 로 이미 적용 (별도 체크 불필요)
     """
     if not _vet_pass(c):
         return False
     if not _a1_wage_match(c, wage_types):
         return False
-    if variant in (1, 3) and not _a2_day_match(c, schedule_json):
+    if variant == 1 and not _a2_day_match(c, schedule_json):
         return False
-    if variant == 3:
-        ak = int(c.get("active_kids") or 0)
-        if not (1 <= ak <= 7):
-            return False
     return True
 
 
