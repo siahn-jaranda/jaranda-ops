@@ -90,16 +90,21 @@ class AutoRunStore:
         llm_model_id: str,
         operator_email: str,
         error_message: str | None = None,
+        variant: int | None = None,
     ) -> None:
-        """성공·실패 무관 무조건 UPSERT. dry-run row는 live run 시 갱신."""
+        """성공·실패 무관 무조건 UPSERT. dry-run row는 live run 시 갱신.
+
+        variant: A/B 4-arm 식별 (0~3). NULL이면 A/B 미적용 (legacy).
+        """
         query = text(
             """
             INSERT INTO matching_ops_auto_run
                 (recommendation_sid, run_at, pool_size, added_count, succeed_count,
-                 denied_count, llm_model_id, dry_run, operator_email, error_message)
+                 denied_count, llm_model_id, dry_run, operator_email, error_message,
+                 variant)
             VALUES
                 (:sid, NOW(), :pool, :added, :succeed, :denied, :model, :dry,
-                 :email, :err)
+                 :email, :err, :variant)
             ON CONFLICT (recommendation_sid) DO UPDATE SET
                 run_at         = NOW(),
                 pool_size      = EXCLUDED.pool_size,
@@ -109,7 +114,8 @@ class AutoRunStore:
                 llm_model_id   = EXCLUDED.llm_model_id,
                 dry_run        = EXCLUDED.dry_run,
                 operator_email = EXCLUDED.operator_email,
-                error_message  = EXCLUDED.error_message
+                error_message  = EXCLUDED.error_message,
+                variant        = EXCLUDED.variant
             """
         )
         async with self._session_factory() as session:
@@ -125,6 +131,7 @@ class AutoRunStore:
                     "dry": dry_run,
                     "email": operator_email,
                     "err": error_message,
+                    "variant": variant,
                 },
             )
             await session.commit()

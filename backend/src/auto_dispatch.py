@@ -18,6 +18,7 @@ race: replica polling 기반이라 atomic하지 않음. console succeedCount=0 =
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -49,11 +50,116 @@ AUTO_BOT_TAG = "auto-dispatch"
 logger = logging.getLogger(__name__)
 KST = timezone(timedelta(hours=9))
 
-# 신청서 1건당 LLM 입력 후보 풀 상한. cooldown 제외 후 top_n 채울 여유.
-_RAW_POOL_LIMIT = 50
+# 신청서 1건당 LLM 입력 후보 풀 상한. cooldown·variant 필터 후 top_n 채울 여유.
+_RAW_POOL_LIMIT = 100
 # LLM 응답 max_tokens — 상위 20명 ranking은 RECOMMEND(5~7) 대비 더 필요.
 # 한 item ~80 token × 20 + summary/note → 약 1700-2000. 안전하게 4096.
 _LLM_MAX_TOKENS = 4096
+
+# =====================================================================
+# A/B 4-arm 가설 (2026-06-02 분석 기반)
+# =====================================================================
+# 모든 arm 공통 베이스: R1(reviews≥10) + R2(exp≥200, recommend≥80%) + A1(시급 매칭)
+#   V0: 베이스만 (베테랑 marginal 효과)
+#   V1: + A2 요일 hard (≥1 매칭)
+#   V2: + A4 거리 hard (같은 시군구, n_gu=1)
+#   V3: + A2 + A4 + A5(active_kids 1-7) full 강화
+# sid hash % 4 로 할당 — matching_ops_auto_run.variant 컬럼 기록.
+
+_VARIANT_NGU = {0: 3, 1: 3, 2: 1, 3: 1}  # V2·V3 만 같은 시군구만 (n_gu=1)
+
+# A1 시급 매칭 ±20% 범위 (모든 arm 공통)
+_WAGE_RANGES = {
+    "STUDY_FRIENDLY":             (0, 22800),
+    "STUDY_HIGHLY_EXPERIENCED":   (15200, 34800),
+    "STUDY_VETERAN":              (23200, 10_000_000),
+    "CARE_FRIENDLY":              (0, 19200),
+    "CARE_VETERAN":               (12800, 10_000_000),
+}
+# 위에 없는 코드(STUDY_MODERATE, CARE_LEVEL_*, NONE, ALL_WAGE 등)는 deprecated — 무관 통과.
+
+_DAY_KEY = {
+    "MONDAY": "mon", "TUESDAY": "tue", "WEDNESDAY": "wed",
+    "THURSDAY": "thu", "FRIDAY": "fri", "SATURDAY": "sat", "SUNDAY": "sun",
+}
+
+
+def _assign_variant(sid: str) -> int:
+    """sid 결정론적 4-arm 할당. abs(hash) % 4 ∈ {0,1,2,3}."""
+    return abs(hash(sid)) % 4
+
+
+def _vet_pass(c: dict[str, Any]) -> bool:
+    """R1+R2: 신참(리뷰 0)·저성과·경력 부족 제외. 모든 arm 공통."""
+    exp = float(c.get("experience_hour") or 0)
+    reviews = int(c.get("reviews") or 0)
+    recommends = int(c.get("recommends") or 0)
+    if exp < 200:
+        return False
+    if reviews < 10:
+        return False
+    if recommends / max(reviews, 1) < 0.80:
+        return False
+    return True
+
+
+def _a1_wage_match(c: dict[str, Any], wage_types: list[str]) -> bool:
+    """A1: 신청서 wage_range_type 중 하나라도 선생님 시급(±20%) 매칭이면 OK.
+    deprecated 코드만 있으면 무관 통과. wage_types 비어있어도 통과."""
+    if not wage_types:
+        return True
+    t_wage = int(c.get("subject_wage") or 0)
+    for wt in wage_types:
+        if wt not in _WAGE_RANGES:
+            return True  # deprecated → 무관 통과
+        lo, hi = _WAGE_RANGES[wt]
+        if lo <= t_wage <= hi:
+            return True
+    return False
+
+
+def _a2_day_match(c: dict[str, Any], schedule_json: Any) -> bool:
+    """A2: 신청서 possible_day_of_weeks ∩ 선생님 가용요일 ≥ 1."""
+    try:
+        sched = json.loads(schedule_json) if isinstance(schedule_json, str) else schedule_json
+    except (ValueError, TypeError):
+        return True  # 파싱 실패 → 무관 통과
+    if not isinstance(sched, dict):
+        return True
+    days = sched.get("possible_day_of_weeks") or []
+    if not days:
+        return True  # 요일 정보 없으면 통과
+    for d in days:
+        key = _DAY_KEY.get(d)
+        if key and bool(c.get(key)):
+            return True
+    return False
+
+
+def _apply_variant_filter(
+    c: dict[str, Any],
+    variant: int,
+    wage_types: list[str],
+    schedule_json: Any,
+) -> bool:
+    """variant별 hard filter 통과 여부.
+
+    공통: R1+R2+A1 (모든 arm)
+    V1,V3: + A2 요일
+    V3: + A5 active_kids 1-7
+    V2,V3: A4는 SQL 단계에서 n_gu=1 로 이미 적용 (별도 체크 불필요)
+    """
+    if not _vet_pass(c):
+        return False
+    if not _a1_wage_match(c, wage_types):
+        return False
+    if variant in (1, 3) and not _a2_day_match(c, schedule_json):
+        return False
+    if variant == 3:
+        ak = int(c.get("active_kids") or 0)
+        if not (1 <= ak <= 7):
+            return False
+    return True
 
 
 class AutoDispatchUnavailable(RuntimeError):
@@ -146,10 +252,12 @@ async def run_once(
                     llm_model_id=settings.llm_recommend_model_id,
                     operator_email=operator_email,
                     error_message=str(e)[:1000],
+                    variant=_assign_variant(sid),
                 )
             except Exception:
                 logger.exception("auto_dispatch record_run on error failed sid=%s", sid)
-            res = {"sid": sid, "status": "error", "error": str(e)[:300]}
+            res = {"sid": sid, "status": "error", "error": str(e)[:300],
+                   "variant": _assign_variant(sid)}
         processed.append(res)
 
     summary = _make_summary(
@@ -187,8 +295,12 @@ async def _process_one(
     lat = float(app["lat"])
     lng = float(app["lng"])
 
-    # a) 후보 풀
-    gu_codes = await replica.find_nearby_sigungu(lat, lng, 3)
+    # A/B 4-arm variant 할당 (sid hash % 4)
+    variant = _assign_variant(sid)
+    n_gu = _VARIANT_NGU[variant]
+
+    # a) 후보 풀 — variant별 n_gu 조절 (V2/V3는 같은 시군구만 = A4)
+    gu_codes = await replica.find_nearby_sigungu(lat, lng, n_gu)
     cands = await replica.list_candidate_teachers(
         sid, gu_codes, spec, statuses, _RAW_POOL_LIMIT
     )
@@ -200,8 +312,10 @@ async def _process_one(
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
             error_message="no_candidates_in_pool",
+            variant=variant,
         )
-        return {"sid": sid, "status": "skipped", "reason": "no_candidates_in_pool"}
+        return {"sid": sid, "status": "skipped", "reason": "no_candidates_in_pool",
+                "variant": variant}
 
     # b) cooldown — 오늘 추천 알림 ≥ cap 받은 선생님 사전 제외
     teacher_sids_in_pool = [str(c["teacher_sid"]) for c in cands]
@@ -218,9 +332,38 @@ async def _process_one(
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
             error_message=f"all_in_cooldown removed={cooldown_removed}",
+            variant=variant,
         )
         return {"sid": sid, "status": "skipped", "reason": "all_in_cooldown",
-                "pool_size": raw_pool_size, "cooldown_removed": cooldown_removed}
+                "pool_size": raw_pool_size, "cooldown_removed": cooldown_removed,
+                "variant": variant}
+
+    # b-2) A/B variant hard filter (R1+R2+A1 공통, V1/V3 +A2, V3 +A5)
+    pre_variant_size = len(filtered)
+    try:
+        wage_map = await replica.list_wage_ranges([sid])
+        wage_types = wage_map.get(sid) or []
+    except Exception:
+        logger.exception("auto_dispatch wage_ranges fetch failed sid=%s", sid)
+        wage_types = []
+    schedule_json = app.get("schedule")
+    filtered = [
+        c for c in filtered
+        if _apply_variant_filter(c, variant, wage_types, schedule_json)
+    ]
+    variant_removed = pre_variant_size - len(filtered)
+    if not filtered:
+        await store.record_run(
+            recommendation_sid=sid, dry_run=dry_run,
+            pool_size=pre_variant_size, added_count=0, succeed_count=0, denied_count=0,
+            llm_model_id=settings.llm_recommend_model_id,
+            operator_email=operator_email,
+            error_message=f"empty_after_variant_filter v={variant} removed={variant_removed}",
+            variant=variant,
+        )
+        return {"sid": sid, "status": "skipped", "reason": "empty_after_variant_filter",
+                "variant": variant, "variant_removed": variant_removed,
+                "pool_size": pre_variant_size}
 
     # c) LLM 랭킹
     sched = _parse_schedule(app.get("schedule"))
@@ -238,9 +381,10 @@ async def _process_one(
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
             error_message=f"llm_daily_limit_exceeded current={current}",
+            variant=variant,
         )
         return {"sid": sid, "status": "skipped", "reason": "llm_daily_limit_exceeded",
-                "current": current}
+                "current": current, "variant": variant}
 
     payload = _build_input(app, cand_views)
     try:
@@ -263,8 +407,9 @@ async def _process_one(
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
             error_message=f"llm_failed: {e!s}"[:1000],
+            variant=variant,
         )
-        return {"sid": sid, "status": "error", "error": "llm_failed"}
+        return {"sid": sid, "status": "error", "error": "llm_failed", "variant": variant}
 
     try:
         await get_llm_insight_store().add_token_usage(in_tok, out_tok)
@@ -302,9 +447,10 @@ async def _process_one(
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
             error_message="llm_returned_empty_ranked",
+            variant=variant,
         )
         return {"sid": sid, "status": "skipped", "reason": "llm_returned_empty_ranked",
-                "pool_size": len(filtered)}
+                "pool_size": len(filtered), "variant": variant}
 
     # d) 콘솔 호출 (live) 또는 스킵 (dry-run)
     if dry_run:
@@ -318,6 +464,7 @@ async def _process_one(
             succeed_count=0, denied_count=0,
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
+            variant=variant,
         )
         return {
             "sid": sid, "status": "dry_run",
@@ -342,8 +489,9 @@ async def _process_one(
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
             error_message=err,
+            variant=variant,
         )
-        return {"sid": sid, "status": "error", "error": err[:300]}
+        return {"sid": sid, "status": "error", "error": err[:300], "variant": variant}
 
     # 자란다 콘솔 응답이 snake_case (application.yaml: property-naming-strategy: SNAKE_CASE).
     # 안전하게 두 표기 모두 호환.
@@ -396,11 +544,13 @@ async def _process_one(
         llm_model_id=settings.llm_recommend_model_id,
         operator_email=operator_email,
         error_message=err,
+        variant=variant,
     )
 
     return {
         "sid": sid,
         "status": "live" if visit_offers_called and not err else "partial",
+        "variant": variant,
         "pool_size": len(filtered),
         "cooldown_removed": cooldown_removed,
         "requested": len(top_sids),
