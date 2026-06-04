@@ -142,6 +142,36 @@ class ConsoleClient:
             return body
         return []
 
+    async def change_status(
+        self,
+        recommendation_sids: list[str],
+        status: str,
+        send_alimtalk: bool,
+    ) -> list[dict[str, Any]]:
+        """방문신청서 상태 일괄 변경.
+
+        SUGGESTED_TO_PARENT(선생님 추천)로 바꾸면 부모님께 [선생님 추천]
+        알림톡이 발송된다(send_alimtalk=True 시). 응답=거절 리스트
+        (DeniedRecommendationUpdate: recommendationId·message). 빈 리스트면 전건 성공.
+        전제(서버 validator): 접수안내 상태 + 방문 수락 선생님 1명 이상.
+        """
+        if not recommendation_sids:
+            return []
+        st, body = await self._request(
+            "POST",
+            "/console/v1/admin/recommendations/status",
+            json={
+                "status": status,
+                "recommendation_sids": recommendation_sids,
+                "sendAlimtalk": send_alimtalk,
+            },
+        )
+        if st >= 400:
+            raise ConsoleApiError(st, "change_status", body)
+        if isinstance(body, list):
+            return body
+        return []
+
 
 def _safe_body(r: httpx.Response) -> Any:
     if not r.text:

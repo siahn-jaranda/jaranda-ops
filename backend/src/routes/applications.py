@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from src.config import settings
+from src.console_client import ConsoleApiError, console_available, get_console_client
 from src.db import get_replica
 from src.firestore_chat import find_chat_status, firestore_available
 from src.handler_store import get_handler_store, handler_store_available
@@ -1122,3 +1123,37 @@ async def list_teachers(sid: str) -> dict[str, Any]:
             for r in rows
         ],
     }
+
+
+@router.post("/{sid}/suggest-to-parent")
+async def suggest_to_parent(sid: str) -> dict[str, Any]:
+    """추천 선생님 목록을 부모님께 전달.
+
+    신청서 상태를 선생님 추천(SUGGESTED_TO_PARENT)으로 전환하면서 부모님께
+    [선생님 추천] 알림톡을 발송한다(send_alimtalk=True). 전제(콘솔 validator):
+    현재 접수안내 상태 + 방문 수락 선생님 1명 이상. 미충족 시 콘솔이 거절
+    리스트를 반환 → ok=False로 사유 전달.
+    """
+    if not console_available():
+        raise HTTPException(
+            status_code=503, detail="콘솔 API 미설정 (CONSOLE_USERNAME/PASSWORD)"
+        )
+    raw_sid = sid[4:] if sid.startswith("SID-") else sid
+    console = get_console_client()
+    try:
+        denied = await console.change_status([raw_sid], "SUGGESTED_TO_PARENT", True)
+    except ConsoleApiError as e:
+        logger.error(
+            "suggest_to_parent change_status failed sid=%s status=%s body=%r",
+            sid, e.status, e.body,
+        )
+        raise HTTPException(status_code=502, detail=f"콘솔 상태 변경 실패: {e.body}")
+    except Exception:
+        logger.exception("suggest_to_parent failed sid=%s", sid)
+        raise HTTPException(status_code=502, detail="콘솔 상태 변경 실패")
+
+    if denied:
+        d = denied[0] if isinstance(denied[0], dict) else {}
+        msg = d.get("message") or d.get("reason") or "전달할 수 없는 신청서입니다."
+        return {"ok": False, "denied": denied, "message": msg}
+    return {"ok": True, "message": "부모님께 선생님 추천을 전달했습니다."}
