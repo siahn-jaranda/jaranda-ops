@@ -468,6 +468,7 @@ async def _process_one(
         )
         return {
             "sid": sid, "status": "dry_run",
+            "variant": variant,
             "pool_size": len(filtered),
             "cooldown_removed": cooldown_removed,
             "top": [{"teacher_sid": s, "name": n} for s, n in zip(top_sids, top_names)],
