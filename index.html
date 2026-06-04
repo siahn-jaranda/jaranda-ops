@@ -1685,6 +1685,33 @@ async function releaseHandler(id) {
     alert('제품담당 해제 실패: ' + e.message);
   }
 }
+async function suggestToParent(id, btn) {
+  if (!authToken) { showGate(); return; }
+  if (!confirm('부모님께 추천 선생님 목록을 전달하고 [선생님 추천] 알림톡을 발송합니다.\n\n계속하시겠습니까?')) return;
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '전달 중...'; }
+  try {
+    const r = await fetch(API_BASE + `/api/applications/${id}/suggest-to-parent`, {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert('부모님께 전달 실패: ' + (data.detail || ('오류 ' + r.status)));
+      return;
+    }
+    if (data.ok === false) {
+      alert('전달할 수 없습니다: ' + (data.message || '전제조건 미충족 (접수안내 상태 + 수락 선생님 1명 이상 필요)'));
+      return;
+    }
+    alert(data.message || '부모님께 전달했습니다.');
+    await loadLiveData(true);
+  } catch (e) {
+    alert('부모님께 전달 실패: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+}
 
 function renderTableView(apps) {
   if (!apps.length) {
@@ -2053,7 +2080,7 @@ function renderDetailPanel(app) {
     <div class="dp-foot">
       <button class="btn btn-secondary" onclick="openMemoModal('${app.id}')">메모</button>
       <div class="spacer"></div>
-      <button class="btn btn-primary" onclick="alert('부모님께 전달 (구현 예정)')">부모님께 전달</button>
+      <button class="btn btn-primary" onclick="suggestToParent('${app.id}', this)">부모님께 전달</button>
     </div>
   </aside>`;
 }
