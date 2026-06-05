@@ -141,21 +141,39 @@ def _a2_day_match(c: dict[str, Any], schedule_json: Any) -> bool:
     return False
 
 
+def _a6_gender_match(c: dict[str, Any], preferred_gender: int | None) -> bool:
+    """A6: 부모 선호 성별과 선생님 성별 매칭. 모든 variant 공통.
+
+    규칙 (자란다 도메인):
+    - 부모 1 (여성 선호) → teacher.gender=1 (여성)만 통과
+    - 부모 2 (남성 선호) → 무관 (모두 통과). 남자 선생님 풀 작아 hard 시 풀 0 위험
+    - 부모 3 (무관) → 모두 통과
+    - 부모 NULL/0 → 무관
+    """
+    if preferred_gender != 1:
+        return True  # 남성 선호·무관·NULL 모두 통과
+    t_gender = c.get("teacher_gender")
+    return t_gender == 1
+
+
 def _apply_variant_filter(
     c: dict[str, Any],
     variant: int,
     wage_types: list[str],
     schedule_json: Any,
+    preferred_gender: int | None,
 ) -> bool:
     """variant별 hard filter 통과 여부 (3-arm).
 
-    공통: R1+R2+A1 (모든 arm)
+    공통: R1+R2+A1+A6(gender) (모든 arm)
     V1: + A2 요일
     V2: A4는 SQL 단계에서 n_gu=1 로 이미 적용 (별도 체크 불필요)
     """
     if not _vet_pass(c):
         return False
     if not _a1_wage_match(c, wage_types):
+        return False
+    if not _a6_gender_match(c, preferred_gender):
         return False
     if variant == 1 and not _a2_day_match(c, schedule_json):
         return False
@@ -347,9 +365,10 @@ async def _process_one(
         logger.exception("auto_dispatch wage_ranges fetch failed sid=%s", sid)
         wage_types = []
     schedule_json = app.get("schedule")
+    preferred_gender = app.get("preferable_teacher_gender")
     filtered = [
         c for c in filtered
-        if _apply_variant_filter(c, variant, wage_types, schedule_json)
+        if _apply_variant_filter(c, variant, wage_types, schedule_json, preferred_gender)
     ]
     variant_removed = pre_variant_size - len(filtered)
     if not filtered:

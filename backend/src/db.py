@@ -674,7 +674,7 @@ class JarandaReplica:
               t.activity_status, t.activity_status_text,
               t.experience_hour, t.experience_hour_for_study,
               t.experience_hour_for_play, t.university, t.major,
-              t.lateness,
+              t.lateness, t.gender AS teacher_gender,
               MIN(tps.priority) AS pref_priority,
               MAX(sch.mon <> 0) AS mon, MAX(sch.tue <> 0) AS tue,
               MAX(sch.wed <> 0) AS wed, MAX(sch.thu <> 0) AS thu,
