@@ -58,12 +58,12 @@ _RAW_POOL_LIMIT = 100
 _LLM_MAX_TOKENS = 4096
 
 # =====================================================================
-# A/B 3-arm 가설 (2026-06-02 분석 기반, V3 제거 — 풀 0 위험)
+# A/B 3-arm 가설 v2 (2026-06-15 갱신 — 1차 결과 V1(요일) 매칭률 4.2배 확인)
 # =====================================================================
-# 모든 arm 공통 베이스: R1(reviews≥10) + R2(exp≥200, recommend≥80%) + A1(시급 매칭)
-#   V0: 베이스만 (베테랑·시급 marginal 효과)
-#   V1: + A2 요일 hard (≥1 매칭)
-#   V2: + A4 거리 hard (같은 시군구, n_gu=1)
+# 새 공통 베이스: R1(reviews≥10) + R2(exp≥200, recommend≥80%) + A2(요일) + A6(성별)
+#   V0: + A1 시급 매칭 — 이전 V1 그대로 (현재 챔피언)
+#   V1: A1 제외 (요일+성별만) — 시급 매칭 marginal 효과 측정
+#   V2: A1 제외 + A4 같은 시군구 hard (n_gu=1) — 시급↔거리 trade-off 측정
 # md5 hash % 3 — 균등 할당. matching_ops_auto_run.variant 컬럼 기록.
 
 _VARIANT_NGU = {0: 3, 1: 3, 2: 1}  # V2 만 같은 시군구만 (n_gu=1)
@@ -163,19 +163,20 @@ def _apply_variant_filter(
     schedule_json: Any,
     preferred_gender: int | None,
 ) -> bool:
-    """variant별 hard filter 통과 여부 (3-arm).
+    """variant별 hard filter 통과 여부 (3-arm v2).
 
-    공통: R1+R2+A1+A6(gender) (모든 arm)
-    V1: + A2 요일
-    V2: A4는 SQL 단계에서 n_gu=1 로 이미 적용 (별도 체크 불필요)
+    공통: R1+R2 + A2(요일) + A6(성별) — 모든 arm
+    V0: + A1 시급 매칭 (이전 V1 그대로, 현재 챔피언)
+    V1: 추가 없음 — 시급 빼고 요일만
+    V2: A1 빼고 + A4 같은 시군구 (SQL 단계 n_gu=1 으로 이미 적용)
     """
     if not _vet_pass(c):
         return False
-    if not _a1_wage_match(c, wage_types):
-        return False
     if not _a6_gender_match(c, preferred_gender):
         return False
-    if variant == 1 and not _a2_day_match(c, schedule_json):
+    if not _a2_day_match(c, schedule_json):
+        return False
+    if variant == 0 and not _a1_wage_match(c, wage_types):
         return False
     return True
 
