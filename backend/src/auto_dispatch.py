@@ -58,15 +58,18 @@ _RAW_POOL_LIMIT = 100
 _LLM_MAX_TOKENS = 4096
 
 # =====================================================================
-# A/B 3-arm 가설 v2 (2026-06-15 갱신 — 1차 결과 V1(요일) 매칭률 4.2배 확인)
+# V0 전체 승격 (2026-07-02) — A/B v2 종료
 # =====================================================================
-# 새 공통 베이스: R1(reviews≥10) + R2(exp≥200, recommend≥80%) + A2(요일) + A6(성별)
-#   V0: + A1 시급 매칭 — 이전 V1 그대로 (현재 챔피언)
-#   V1: A1 제외 (요일+성별만) — 시급 매칭 marginal 효과 측정
-#   V2: A1 제외 + A4 같은 시군구 hard (n_gu=1) — 시급↔거리 trade-off 측정
-# md5 hash % 3 — 균등 할당. matching_ops_auto_run.variant 컬럼 기록.
+# 3주 관찰(16일·172 신청서) 결과 V0(R1+R2+A1시급+A2요일+A6성별)이 챔피언 확정.
+#   V0 매칭률 14.89% (W1·W3 각각 22.22% 재현), 수락률 W3 0.91%
+#   V1 매칭률 13.24% (시급 A1 제외) — V0 근소 열등
+#   V2 매칭률 3.51% (같은 구 A4) — 확연히 열등, 폐기
+# 실험 결과 docs/AB_TEST_v2_RESULT.md.
+#
+# 이번 릴리스: _assign_variant 항상 0 반환 → 전체 신청서 V0 로직 적용.
+# variant 컬럼은 그대로 유지 (모두 0으로 기록). 다음 세대 A/B 도입 시 재사용.
 
-_VARIANT_NGU = {0: 3, 1: 3, 2: 1}  # V2 만 같은 시군구만 (n_gu=1)
+_VARIANT_NGU = {0: 3, 1: 3, 2: 1}  # 미사용 (variant 항상 0). 참고용 유지.
 
 # A1 시급 매칭 ±20% 범위 (모든 arm 공통)
 _WAGE_RANGES = {
@@ -85,13 +88,12 @@ _DAY_KEY = {
 
 
 def _assign_variant(sid: str) -> int:
-    """sid 결정론적 3-arm 할당. md5(sid) 첫 4바이트 % 3 ∈ {0,1,2}.
+    """V0 100% 승격 (2026-07-02). 모든 신청서에 V0 로직만 적용.
 
-    Python builtin hash 는 PYTHONHASHSEED 영향 받아 프로세스마다 다름 → 균등성 깨질
-    위험. md5는 결정론적 + 균등 분포. % 3 편향(256/3=85.33)은 32비트 정수로 흡수.
+    A/B v2 종료. docs/AB_TEST_v2_RESULT.md 참고.
+    다음 세대 A/B 재개 시 md5 hash 분배 복원.
     """
-    h = hashlib.md5(sid.encode("utf-8")).digest()
-    return int.from_bytes(h[:4], "big") % 3
+    return 0
 
 
 def _vet_pass(c: dict[str, Any]) -> bool:
@@ -163,12 +165,10 @@ def _apply_variant_filter(
     schedule_json: Any,
     preferred_gender: int | None,
 ) -> bool:
-    """variant별 hard filter 통과 여부 (3-arm v2).
+    """V0 로직 hard filter (2026-07-02 승격).
 
-    공통: R1+R2 + A2(요일) + A6(성별) — 모든 arm
-    V0: + A1 시급 매칭 (이전 V1 그대로, 현재 챔피언)
-    V1: 추가 없음 — 시급 빼고 요일만
-    V2: A1 빼고 + A4 같은 시군구 (SQL 단계 n_gu=1 으로 이미 적용)
+    R1+R2 + A1(시급±20%) + A2(요일) + A6(성별) — 전 신청서 공통.
+    variant 파라미터는 하위호환 위해 유지 (_assign_variant가 항상 0).
     """
     if not _vet_pass(c):
         return False
@@ -176,7 +176,7 @@ def _apply_variant_filter(
         return False
     if not _a2_day_match(c, schedule_json):
         return False
-    if variant == 0 and not _a1_wage_match(c, wage_types):
+    if not _a1_wage_match(c, wage_types):
         return False
     return True
 
