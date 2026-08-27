@@ -916,6 +916,11 @@ class JarandaReplica:
             의향이 분명한 신청서를 시스템이 흔들지 않음)
           - **지원·수락 0명**: recommendation_teachers 에 applied=1 OR accepted=1
             row 없음 (운영자가 추천한 선생님이 있어도 응답이 없으면 자동화 대상)
+          - **부모 주시 등급 제외**: account.observation_level IN (9, 90, 99)
+            = 관리필요(ELEPHANT 9) · 추천제한(DOLPHIN 90) · 이용제한(TURTLE 99).
+            관리필요는 매칭에 각별한 주의가 필요한 가정이라 사람이 봐야 하고,
+            추천제한·이용제한은 정책상 추천 자체를 막은 고객.
+            ObservationLevel enum (app-server domain/account/model/ObservationLevel.java).
 
         candidates.py 라우트와 동일한 필드 풀 셀렉트 → 호출자는 _parse_schedule /
         list_candidate_teachers 로 그대로 넘길 수 있음. list_candidate_teachers 가
@@ -973,6 +978,11 @@ class JarandaReplica:
                 SELECT 1 FROM recommendation_teachers rt
                 WHERE rt.recommendation_sid = r.sid
                   AND (rt.applied = 1 OR rt.accepted = 1)
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM account pa
+                WHERE pa.sid = r.parent_account_sid
+                  AND pa.observation_level IN (9, 90, 99)
               )
             ORDER BY r.created_at ASC
             LIMIT :limit
