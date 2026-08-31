@@ -127,7 +127,23 @@ def _a1_wage_match(c: dict[str, Any], wage_types: list[str]) -> bool:
 
 
 def _a2_day_match(c: dict[str, Any], schedule_json: Any) -> bool:
-    """A2: 신청서 possible_day_of_weeks ∩ 선생님 가용요일 ≥ 1."""
+    """A2: 신청서 possible_day_of_weeks ∩ 선생님 가용요일 ≥ 1.
+
+    '요일 정보 없음'은 양쪽 모두 판단 불가로 보고 통과시킨다.
+      - 신청서에 요일이 없으면 통과 (기존)
+      - 선생님 요일 데이터가 없어도 통과 (2026-08-31 추가)
+        schedule row 자체가 없으면 mon~sun 이 전부 None,
+        row 는 있으나 미입력이면 전부 0 — 둘 다 '미설정'으로 취급.
+
+    근거: 최근 5일 11,379 (신청서×선생님) 쌍 실측
+      요일 일치      9,045쌍 수락률 3.17%
+      요일 불일치    1,241쌍 수락률 1.77%
+      요일 미설정    1,093쌍 수락률 4.12%  ← 세 그룹 중 최고
+    미설정은 '시간이 없다'가 아니라 '폼을 안 채웠다'는 뜻이라 배제 근거가 없다.
+    R1+R2 통과 256명 중 33명(12.9%)이 여기 해당하며, 이들의 90일 평균 지원은
+    4.52건으로 요일 설정자(3.20건)보다 오히려 활발하다.
+    요일이 실제로 안 맞는 후보는 LLM 이 day_match 를 최우선 신호로 보고 거른다.
+    """
     try:
         sched = json.loads(schedule_json) if isinstance(schedule_json, str) else schedule_json
     except (ValueError, TypeError):
@@ -136,7 +152,9 @@ def _a2_day_match(c: dict[str, Any], schedule_json: Any) -> bool:
         return True
     days = sched.get("possible_day_of_weeks") or []
     if not days:
-        return True  # 요일 정보 없으면 통과
+        return True  # 신청서에 요일 정보 없으면 통과
+    if not any(bool(c.get(k)) for k in _DAY_KEY.values()):
+        return True  # 선생님 요일 미설정(None 또는 전부 0) → 판단 불가 → 통과
     for d in days:
         key = _DAY_KEY.get(d)
         if key and bool(c.get(key)):
