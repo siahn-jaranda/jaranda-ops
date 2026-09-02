@@ -433,6 +433,48 @@ class JarandaReplica:
             result = await session.execute(query)
             return {int(row._mapping["id"]): row._mapping["name"] for row in result}
 
+    async def outcome_stats(self, sids: list[str]) -> dict[str, int]:
+        """자동 디스패치가 처리한 신청서들의 성과 집계.
+
+        반환: sent(발송 대상 선생님 수는 호출자가 PG succeed_count 로 셈)를 제외한
+              accepted / rejected / responded / matched / apps.
+
+        - accepted / rejected: recommendation_teachers 의 accepted=1 / rejected=1 선생님 수.
+          봇이 추가한 선생님과 자발 지원자가 섞일 수 있으나, 대상 신청서는 처리 시점
+          '수업 가능 선생님 1명 이하' 였으므로 대부분 봇 발송분이다.
+        - matched: recommendation.status IN (40, 90) 인 신청서 수
+          (40=매칭 완료, 90=최초방문 완료). [[reference_recommendation_status]]
+        """
+        if not sids:
+            return {"apps": 0, "accepted": 0, "rejected": 0, "matched": 0}
+        q_t = text(
+            """
+            SELECT
+              SUM(rt.accepted = 1) AS accepted,
+              SUM(rt.rejected = 1) AS rejected
+            FROM recommendation_teachers rt
+            WHERE rt.recommendation_sid IN :sids
+            """
+        ).bindparams(bindparam("sids", expanding=True))
+        q_r = text(
+            """
+            SELECT
+              COUNT(*) AS apps,
+              SUM(CASE WHEN r.status IN (40, 90) THEN 1 ELSE 0 END) AS matched
+            FROM recommendation r
+            WHERE r.sid IN :sids
+            """
+        ).bindparams(bindparam("sids", expanding=True))
+        async with self._session_factory() as session:
+            t = (await session.execute(q_t, {"sids": sids})).first()
+            r = (await session.execute(q_r, {"sids": sids})).first()
+        return {
+            "apps": int((r and r[0]) or 0),
+            "matched": int((r and r[1]) or 0),
+            "accepted": int((t and t[0]) or 0),
+            "rejected": int((t and t[1]) or 0),
+        }
+
     async def list_wage_ranges(self, sids: list[str]) -> dict[str, list[str]]:
         """신청서 sid → 부모님이 선택한 wage_range_type 코드 리스트 (DesiredCost enum).
 
