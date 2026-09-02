@@ -73,15 +73,8 @@ _LLM_MAX_TOKENS = 4096
 
 _VARIANT_NGU = {0: 3, 1: 3, 2: 1}  # 미사용 (variant 항상 0). 참고용 유지.
 
-# A1 시급 매칭 ±20% 범위 (모든 arm 공통)
-_WAGE_RANGES = {
-    "STUDY_FRIENDLY":             (0, 22800),
-    "STUDY_HIGHLY_EXPERIENCED":   (15200, 34800),
-    "STUDY_VETERAN":              (23200, 10_000_000),
-    "CARE_FRIENDLY":              (0, 19200),
-    "CARE_VETERAN":               (12800, 10_000_000),
-}
-# 위에 없는 코드(STUDY_MODERATE, CARE_LEVEL_*, NONE, ALL_WAGE 등)는 deprecated — 무관 통과.
+# A1 시급 하드필터는 2026-09-02 제거됨. 시급대 정본(_WAGE_RANGES)은
+# routes/candidates.py 로 옮겨 LLM 입력 신호로만 쓴다.
 
 _DAY_KEY = {
     "MONDAY": "mon", "TUESDAY": "tue", "WEDNESDAY": "wed",
@@ -110,21 +103,6 @@ def _vet_pass(c: dict[str, Any]) -> bool:
     if recommends / max(reviews, 1) < 0.80:
         return False
     return True
-
-
-def _a1_wage_match(c: dict[str, Any], wage_types: list[str]) -> bool:
-    """A1: 신청서 wage_range_type 중 하나라도 선생님 시급(±20%) 매칭이면 OK.
-    deprecated 코드만 있으면 무관 통과. wage_types 비어있어도 통과."""
-    if not wage_types:
-        return True
-    t_wage = int(c.get("subject_wage") or 0)
-    for wt in wage_types:
-        if wt not in _WAGE_RANGES:
-            return True  # deprecated → 무관 통과
-        lo, hi = _WAGE_RANGES[wt]
-        if lo <= t_wage <= hi:
-            return True
-    return False
 
 
 def _a2_day_match(c: dict[str, Any], schedule_json: Any) -> bool:
@@ -181,22 +159,25 @@ def _a6_gender_match(c: dict[str, Any], preferred_gender: int | None) -> bool:
 def _apply_variant_filter(
     c: dict[str, Any],
     variant: int,
-    wage_types: list[str],
     schedule_json: Any,
     preferred_gender: int | None,
 ) -> bool:
-    """V0 로직 hard filter (2026-07-02 승격).
+    """V0 로직 hard filter.
 
-    R1+R2 + A1(시급±20%) + A2(요일) + A6(성별) — 전 신청서 공통.
+    R1+R2 + A2(요일) + A6(성별) — 전 신청서 공통.
     variant 파라미터는 하위호환 위해 유지 (_assign_variant가 항상 0).
+
+    A1(시급) 은 2026-09-02 제거. 참조하던 _WAGE_RANGES 가 2026-04~05 코드 이관을
+    반영하지 못해 신청서의 82.4% 에서 무력화돼 있었고, 작동하는 나머지에서는
+    희망 상한 초과 선생님의 수락률이 2.4~3.4배 높아 역방향으로 동작했다.
+    정본 범위로 정렬하면 오히려 실제 성사 매칭의 31% 를 차단한다.
+    시급대는 이제 LLM 입력(parent_wage_preference)의 소프트 신호로만 쓴다.
     """
     if not _vet_pass(c):
         return False
     if not _a6_gender_match(c, preferred_gender):
         return False
     if not _a2_day_match(c, schedule_json):
-        return False
-    if not _a1_wage_match(c, wage_types):
         return False
     return True
 
@@ -389,7 +370,7 @@ async def _process_one(
     preferred_gender = app.get("preferable_teacher_gender")
     filtered = [
         c for c in filtered
-        if _apply_variant_filter(c, variant, wage_types, schedule_json, preferred_gender)
+        if _apply_variant_filter(c, variant, schedule_json, preferred_gender)
     ]
     variant_removed = pre_variant_size - len(filtered)
     if not filtered:
@@ -426,7 +407,7 @@ async def _process_one(
         return {"sid": sid, "status": "skipped", "reason": "llm_daily_limit_exceeded",
                 "current": current, "variant": variant}
 
-    payload = _build_input(app, cand_views)
+    payload = _build_input(app, cand_views, wage_types)
     try:
         raw_text, parsed, in_tok, out_tok = await llm.generate_recommendation(
             payload,
