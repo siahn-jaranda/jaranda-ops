@@ -1,7 +1,8 @@
 """자동 디스패치 — 지원 0개 신청서에 LLM 추천 선생님 추가 + 방문 제안 발송.
 
 흐름:
-  1) 신청서 1차 필터 (replica: status=10, age≥1h, 지목 0명, 좌표 있음,
+  1) 신청서 1차 필터 (replica: status=10, age≥min_age(운영 1h), 지목 0명,
+     수업 가능한 선생님 1명 이하, 좌표 있음,
      부모 observation_level 관리필요/추천제한/이용제한 제외)
   2) PG 제외 (auto_run.live / memo / handler 어느 하나라도 있으면 skip)
   3) 일일 cap (live만): KST 오늘 처리한 신청서 수가 daily_max_apps 이상이면 중단
@@ -629,7 +630,7 @@ async def _record_dashboard(
         f"[AI매칭 자동] LLM 추천 {len(top_items)}명 추가 + 방문제안 발송",
         "",
         "선정 기준:",
-        "• 신청서: 정기수업(regularity=2) · 지원·수락 0명 · 부모 지목 없음 · 생성 후 1시간 이상",
+        "• 신청서: 정기수업(regularity=2) · 수업 가능 선생님 1명 이하 · 부모 지목 없음 · 생성 후 1시간 이상",
         "• 고객: 관리필요·추천제한·이용제한 등급 제외",
         f"• 후보 풀: 부모 좌표 인근 시군구 3개 · 과목={subject_name} · 활동중(2) 선생님만",
         f"• cooldown: 오늘 추천 알림 ≥{cap}건 받은 선생님 사전 제외",

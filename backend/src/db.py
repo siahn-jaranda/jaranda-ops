@@ -914,8 +914,12 @@ class JarandaReplica:
             recommendation_teachers 에 requested=1 row 없음
             (부모가 신청서에서 특정 선생님을 콕 찍은 케이스는 자동화 대상에서 제외 —
             의향이 분명한 신청서를 시스템이 흔들지 않음)
-          - **지원·수락 0명**: recommendation_teachers 에 applied=1 OR accepted=1
-            row 없음 (운영자가 추천한 선생님이 있어도 응답이 없으면 자동화 대상)
+          - **수업 가능한 선생님 1명 이하**: recommendation_teachers 에서
+            applied=1 OR accepted=1 인 선생님 수 <= 1
+            (2026-09-02 변경: 이전에는 0명만 대상. 1명뿐이면 부모가 비교할 선택지가
+            사실상 없어 자동화로 후보를 늘려준다. 이미 응답한 선생님은
+            list_candidate_teachers 의 NOT EXISTS rt 로 중복 추가되지 않는다.)
+            NOTE: 기존 지목 체크와 동일하게 is_deleted 는 보지 않는다.
           - **부모 주시 등급 제외**: account.observation_level IN (9, 90, 99)
             = 관리필요(ELEPHANT 9) · 추천제한(DOLPHIN 90) · 이용제한(TURTLE 99).
             관리필요는 매칭에 각별한 주의가 필요한 가정이라 사람이 봐야 하고,
@@ -974,11 +978,12 @@ class JarandaReplica:
                 WHERE rt.recommendation_sid = r.sid
                   AND rt.requested = 1
               )
-              AND NOT EXISTS (
-                SELECT 1 FROM recommendation_teachers rt
-                WHERE rt.recommendation_sid = r.sid
-                  AND (rt.applied = 1 OR rt.accepted = 1)
-              )
+              AND (
+                SELECT COUNT(DISTINCT rt.teacher_account_sid)
+                  FROM recommendation_teachers rt
+                 WHERE rt.recommendation_sid = r.sid
+                   AND (rt.applied = 1 OR rt.accepted = 1)
+              ) <= 1
               AND NOT EXISTS (
                 SELECT 1 FROM account pa
                 WHERE pa.sid = r.parent_account_sid
