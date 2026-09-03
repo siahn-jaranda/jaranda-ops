@@ -146,14 +146,26 @@ def _a6_gender_match(c: dict[str, Any], preferred_gender: int | None) -> bool:
 
     규칙 (자란다 도메인):
     - 부모 1 (여성 선호) → teacher.gender=1 (여성)만 통과
-    - 부모 2 (남성 선호) → 무관 (모두 통과). 남자 선생님 풀 작아 hard 시 풀 0 위험
+    - 부모 2 (남성 선호) → teacher.gender=2 (남성)만 통과   ← 2026-09-03 변경
     - 부모 3 (무관) → 모두 통과
     - 부모 NULL/0 → 무관
+
+    2026-09-03 이전에는 남성 선호를 무시하고 전원 통과시켰다. 남성 풀이 작아
+    hard 로 걸면 후보 0명이 된다는 이유였는데, 실제로는 더 나쁜 결과를 냈다.
+    최근 30일 남성 선호 정기 신청서 39건 기준:
+      제안 953명 중 여성 236명(24.8%) — 수락 1명(0.42%), 명시 거절 4명
+      남성 717명 — 수락 8명(1.12%)
+    거절 사유가 "부모님께서 남자선생님을 원하셔서 부합하지 않습니다" 로 남는다.
+    선생님에게는 헛제안, 부모에게는 원치 않은 후보였다.
+
+    ⚠️ 대가: R1+R2 를 통과하는 남성은 전국 19명(돌봄 12명)뿐이라, 남성 선호
+    신청서는 대부분 후보 0명이 되어 자동화 대상에서 빠진다(전체의 약 2.7%).
+    의도된 트레이드오프 — 헛제안 대신 사람이 처리하도록 넘긴다.
+    풀이 빈 경우 error_message 의 필터별 breakdown 으로 원인이 드러난다.
     """
-    if preferred_gender != 1:
-        return True  # 남성 선호·무관·NULL 모두 통과
-    t_gender = c.get("teacher_gender")
-    return t_gender == 1
+    if preferred_gender not in (1, 2):
+        return True  # 무관·NULL
+    return c.get("teacher_gender") == preferred_gender
 
 
 def _apply_variant_filter(
@@ -180,6 +192,23 @@ def _apply_variant_filter(
     if not _a2_day_match(c, schedule_json):
         return False
     return True
+
+
+def _filter_breakdown(
+    cands: list[dict[str, Any]],
+    schedule_json: Any,
+    preferred_gender: int | None,
+) -> str:
+    """풀이 전멸했을 때 어느 필터가 몇 명을 잘랐는지. 로그·에러메시지 전용.
+
+    필터는 순차 적용이라 단독 탈락 수의 합이 전체와 일치하지 않는다.
+    원인 지목용 근사치로만 쓴다.
+    """
+    n = len(cands)
+    vet = sum(1 for c in cands if not _vet_pass(c))
+    gender = sum(1 for c in cands if not _a6_gender_match(c, preferred_gender))
+    day = sum(1 for c in cands if not _a2_day_match(c, schedule_json))
+    return f"[pool={n} r1r2_fail={vet} gender_fail={gender} day_fail={day}]"
 
 
 class AutoDispatchUnavailable(RuntimeError):
@@ -369,6 +398,7 @@ async def _process_one(
 
     # b-2) A/B variant hard filter (R1+R2+A1 공통, V1/V3 +A2, V3 +A5)
     pre_variant_size = len(filtered)
+    cooldown_pool = list(filtered)  # variant filter 이전 스냅샷 (breakdown 용)
     try:
         wage_map = await replica.list_wage_ranges([sid])
         wage_types = wage_map.get(sid) or []
@@ -383,12 +413,16 @@ async def _process_one(
     ]
     variant_removed = pre_variant_size - len(filtered)
     if not filtered:
+        breakdown = _filter_breakdown(cooldown_pool, schedule_json, preferred_gender)
         await store.record_run(
             recommendation_sid=sid, dry_run=dry_run,
             pool_size=pre_variant_size, added_count=0, succeed_count=0, denied_count=0,
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
-            error_message=f"empty_after_variant_filter v={variant} removed={variant_removed}",
+            error_message=(
+                f"empty_after_variant_filter v={variant} removed={variant_removed} "
+                f"{breakdown}"
+            ),
             variant=variant,
             pre_responder_count=pre_resp,
             added_teacher_sids=top_sids or None,
