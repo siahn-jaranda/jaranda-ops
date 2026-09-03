@@ -312,6 +312,11 @@ async def _process_one(
     sid = str(app["sid"])
     spec = int(app.get("teacher_specialties") or 5)
     statuses = [2]  # 활동중만
+    # 처리 시점 기존 응답 선생님 수 (0 또는 1). 매칭률을 '응답 0명' 그룹만으로
+    # 비교하기 위해 남긴다 — 2026-09-02 조건 완화로 1명짜리가 섞이기 시작했다.
+    pre_resp = int(app.get("pre_responder_count") or 0)
+    # 콘솔에 추가 요청한 선생님 sid. LLM 랭킹 이후에 채워진다.
+    top_sids: list[str] = []
     lat = float(app["lat"])
     lng = float(app["lng"])
 
@@ -333,6 +338,8 @@ async def _process_one(
             operator_email=operator_email,
             error_message="no_candidates_in_pool",
             variant=variant,
+            pre_responder_count=pre_resp,
+            added_teacher_sids=top_sids or None,
         )
         return {"sid": sid, "status": "skipped", "reason": "no_candidates_in_pool",
                 "variant": variant}
@@ -353,6 +360,8 @@ async def _process_one(
             operator_email=operator_email,
             error_message=f"all_in_cooldown removed={cooldown_removed}",
             variant=variant,
+            pre_responder_count=pre_resp,
+            added_teacher_sids=top_sids or None,
         )
         return {"sid": sid, "status": "skipped", "reason": "all_in_cooldown",
                 "pool_size": raw_pool_size, "cooldown_removed": cooldown_removed,
@@ -381,6 +390,8 @@ async def _process_one(
             operator_email=operator_email,
             error_message=f"empty_after_variant_filter v={variant} removed={variant_removed}",
             variant=variant,
+            pre_responder_count=pre_resp,
+            added_teacher_sids=top_sids or None,
         )
         return {"sid": sid, "status": "skipped", "reason": "empty_after_variant_filter",
                 "variant": variant, "variant_removed": variant_removed,
@@ -403,6 +414,8 @@ async def _process_one(
             operator_email=operator_email,
             error_message=f"llm_daily_limit_exceeded current={current}",
             variant=variant,
+            pre_responder_count=pre_resp,
+            added_teacher_sids=top_sids or None,
         )
         return {"sid": sid, "status": "skipped", "reason": "llm_daily_limit_exceeded",
                 "current": current, "variant": variant}
@@ -429,6 +442,8 @@ async def _process_one(
             operator_email=operator_email,
             error_message=f"llm_failed: {e!s}"[:1000],
             variant=variant,
+            pre_responder_count=pre_resp,
+            added_teacher_sids=top_sids or None,
         )
         return {"sid": sid, "status": "error", "error": "llm_failed", "variant": variant}
 
@@ -469,6 +484,8 @@ async def _process_one(
             operator_email=operator_email,
             error_message="llm_returned_empty_ranked",
             variant=variant,
+            pre_responder_count=pre_resp,
+            added_teacher_sids=top_sids or None,
         )
         return {"sid": sid, "status": "skipped", "reason": "llm_returned_empty_ranked",
                 "pool_size": len(filtered), "variant": variant}
@@ -486,6 +503,8 @@ async def _process_one(
             llm_model_id=settings.llm_recommend_model_id,
             operator_email=operator_email,
             variant=variant,
+            pre_responder_count=pre_resp,
+            added_teacher_sids=top_sids or None,
         )
         return {
             "sid": sid, "status": "dry_run",
@@ -512,6 +531,8 @@ async def _process_one(
             operator_email=operator_email,
             error_message=err,
             variant=variant,
+            pre_responder_count=pre_resp,
+            added_teacher_sids=top_sids or None,
         )
         return {"sid": sid, "status": "error", "error": err[:300], "variant": variant}
 
@@ -567,6 +588,8 @@ async def _process_one(
         operator_email=operator_email,
         error_message=err,
         variant=variant,
+        pre_responder_count=pre_resp,
+        added_teacher_sids=top_sids or None,
     )
 
     return {

@@ -123,20 +123,26 @@ class AutoRunStore:
         operator_email: str,
         error_message: str | None = None,
         variant: int | None = None,
+        pre_responder_count: int | None = None,
+        added_teacher_sids: list[str] | None = None,
     ) -> None:
         """성공·실패 무관 무조건 UPSERT. dry-run row는 live run 시 갱신.
 
         variant: A/B 4-arm 식별 (0~3). NULL이면 A/B 미적용 (legacy).
+        pre_responder_count: 처리 시점 기존 응답 선생님 수 (0 또는 1).
+            매칭률을 '응답 0명' 그룹만으로 비교하기 위한 것 (sql/0011).
+        added_teacher_sids: 콘솔에 추가 요청한 선생님 sid 배열.
+            수락률을 봇 발송분에만 귀속시키기 위한 것 (sql/0011).
         """
         query = text(
             """
             INSERT INTO matching_ops_auto_run
                 (recommendation_sid, run_at, pool_size, added_count, succeed_count,
                  denied_count, llm_model_id, dry_run, operator_email, error_message,
-                 variant)
+                 variant, pre_responder_count, added_teacher_sids)
             VALUES
                 (:sid, NOW(), :pool, :added, :succeed, :denied, :model, :dry,
-                 :email, :err, :variant)
+                 :email, :err, :variant, :pre_resp, :added_sids)
             ON CONFLICT (recommendation_sid) DO UPDATE SET
                 run_at         = NOW(),
                 pool_size      = EXCLUDED.pool_size,
@@ -147,7 +153,9 @@ class AutoRunStore:
                 dry_run        = EXCLUDED.dry_run,
                 operator_email = EXCLUDED.operator_email,
                 error_message  = EXCLUDED.error_message,
-                variant        = EXCLUDED.variant
+                variant        = EXCLUDED.variant,
+                pre_responder_count = EXCLUDED.pre_responder_count,
+                added_teacher_sids  = EXCLUDED.added_teacher_sids
             """
         )
         async with self._session_factory() as session:
@@ -164,6 +172,8 @@ class AutoRunStore:
                     "email": operator_email,
                     "err": error_message,
                     "variant": variant,
+                    "pre_resp": pre_responder_count,
+                    "added_sids": added_teacher_sids,
                 },
             )
             await session.commit()

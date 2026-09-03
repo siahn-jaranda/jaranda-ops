@@ -1012,7 +1012,13 @@ class JarandaReplica:
                 JOIN tag tg ON tg.id = rtag.tag_id
                 WHERE rtag.recommendation_sid = r.sid AND rtag.deleted_at IS NULL
               ) AS subject_tag_names,
-              0 AS applied_count
+              0 AS applied_count,
+              (
+                SELECT COUNT(DISTINCT rt.teacher_account_sid)
+                  FROM recommendation_teachers rt
+                 WHERE rt.recommendation_sid = r.sid
+                   AND (rt.applied = 1 OR rt.accepted = 1)
+              ) AS pre_responder_count
             FROM recommendation r
             WHERE r.status = 10
               AND r.created_at <= NOW() - INTERVAL :min_age MINUTE
