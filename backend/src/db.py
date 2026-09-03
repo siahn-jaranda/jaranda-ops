@@ -433,27 +433,33 @@ class JarandaReplica:
             result = await session.execute(query)
             return {int(row._mapping["id"]): row._mapping["name"] for row in result}
 
-    async def outcome_stats(self, sids: list[str]) -> dict[str, int]:
+    async def outcome_stats(self, sids: list[str], until=None) -> dict[str, int]:
         """자동 디스패치가 처리한 신청서들의 성과 집계.
 
-        반환: sent(발송 대상 선생님 수는 호출자가 PG succeed_count 로 셈)를 제외한
-              accepted / rejected / responded / matched / apps.
+        분모는 **suggested=1 (방문 제안을 실제로 받은 선생님)** 이다.
+        자발 지원(suggested=0, applied=1)은 봇 성과가 아니므로 분자·분모 모두에서 뺀다.
 
-        - accepted / rejected: recommendation_teachers 의 accepted=1 / rejected=1 선생님 수.
-          봇이 추가한 선생님과 자발 지원자가 섞일 수 있으나, 대상 신청서는 처리 시점
-          '수업 가능 선생님 1명 이하' 였으므로 대부분 봇 발송분이다.
-        - matched: recommendation.status IN (40, 90) 인 신청서 수
-          (40=매칭 완료, 90=최초방문 완료). [[reference_recommendation_status]]
+        2026-09-03 정정: 이전 구현은 신청서에 달린 **모든** 행의 accepted 를 세고
+        분모로 PG succeed_count 를 썼다. 신청서 1건당 제안 외 행이 다수 섞여
+        수락률이 15.94% 처럼 비현실적으로 부풀었다(실제는 1% 대).
+
+        until 을 주면 그 시각 이전에 생성된 행만 센다. 전/후 구간의 관측 시간을
+        같게 맞추기 위한 것 — 없으면 시점 무관 전량.
         """
         if not sids:
-            return {"apps": 0, "accepted": 0, "rejected": 0, "matched": 0}
+            return {"apps": 0, "offered": 0, "accepted": 0, "rejected": 0, "matched": 0}
+        cond = "" if until is None else " AND rt._created_at < :until"
+        params: dict[str, Any] = {"sids": sids}
+        if until is not None:
+            params["until"] = until
         q_t = text(
-            """
+            f"""
             SELECT
-              SUM(rt.accepted = 1) AS accepted,
-              SUM(rt.rejected = 1) AS rejected
+              SUM(rt.suggested = 1) AS offered,
+              SUM(rt.suggested = 1 AND rt.accepted = 1) AS accepted,
+              SUM(rt.suggested = 1 AND rt.rejected = 1) AS rejected
             FROM recommendation_teachers rt
-            WHERE rt.recommendation_sid IN :sids
+            WHERE rt.recommendation_sid IN :sids{cond}
             """
         ).bindparams(bindparam("sids", expanding=True))
         q_r = text(
@@ -466,13 +472,14 @@ class JarandaReplica:
             """
         ).bindparams(bindparam("sids", expanding=True))
         async with self._session_factory() as session:
-            t = (await session.execute(q_t, {"sids": sids})).first()
+            t = (await session.execute(q_t, params)).first()
             r = (await session.execute(q_r, {"sids": sids})).first()
         return {
             "apps": int((r and r[0]) or 0),
             "matched": int((r and r[1]) or 0),
-            "accepted": int((t and t[0]) or 0),
-            "rejected": int((t and t[1]) or 0),
+            "offered": int((t and t[0]) or 0),
+            "accepted": int((t and t[1]) or 0),
+            "rejected": int((t and t[2]) or 0),
         }
 
     async def list_wage_ranges(self, sids: list[str]) -> dict[str, list[str]]:

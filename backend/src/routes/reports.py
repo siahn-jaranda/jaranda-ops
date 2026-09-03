@@ -36,9 +36,13 @@ def _anchor() -> datetime:
 
 
 async def _window_stats(store, replica, start: datetime, end: datetime) -> dict[str, Any]:
+    """구간 [start, end) 의 실행 지표 + 성과.
+
+    성과는 end 시점까지 생성된 행만 센다 — 전/후 구간의 관측 시간을 동일하게 맞추려는 것.
+    """
     metrics, sids = await store.window_stats(start, end)
     metrics["sids"] = len(sids)
-    metrics.update(await replica.outcome_stats(sids))
+    metrics.update(await replica.outcome_stats(sids, until=end.replace(tzinfo=None)))
     return metrics
 
 
@@ -73,9 +77,9 @@ def _build_text(day_n: int, window: timedelta, bs: datetime, be: datetime,
         ("성공률(%)", _pct(b["ok"], b["runs"]), _pct(a["ok"], a["runs"]), "%p", True),
         ("풀 중앙값", b["pool_p50"], a["pool_p50"], "명", True),
         ("건당 추가", b["avg_added"], a["avg_added"], "명", True),
-        ("발송 선생님", b["sent"], a["sent"], "명", True),
-        ("수락률(%)", _pct(b["accepted"], b["sent"]), _pct(a["accepted"], a["sent"]), "%p", True),
-        ("거절률(%)", _pct(b["rejected"], b["sent"]), _pct(a["rejected"], a["sent"]), "%p", False),
+        ("제안 발송", b["offered"], a["offered"], "명", True),
+        ("수락률(%)", _pct(b["accepted"], b["offered"]), _pct(a["accepted"], a["offered"]), "%p", True),
+        ("거절률(%)", _pct(b["rejected"], b["offered"]), _pct(a["rejected"], a["offered"]), "%p", False),
         ("매칭률(%)", _pct(b["matched"], b["apps"]), _pct(a["matched"], a["apps"]), "%p", True),
         ("필터전멸(%)", _pct(b["empty_filter"], b["runs"]), _pct(a["empty_filter"], a["runs"]), "%p", False),
     ]
@@ -104,7 +108,7 @@ def _build_text(day_n: int, window: timedelta, bs: datetime, be: datetime,
     if final:
         body += "\n\n_%d일 관찰 종료. 이후 자동 발송은 없습니다._" % settings.ab_report_days
     body += (
-        "\n\n_수락률·거절률은 발송 선생님 대비, 매칭률은 처리 신청서 대비._"
+        "\n\n_수락률·거절률은 방문제안을 받은 선생님(suggested=1) 대비, 매칭률은 처리 신청서 대비._"
         " _최근 구간일수록 매칭 결과가 아직 확정되지 않아 낮게 나올 수 있습니다._"
     )
     return body
