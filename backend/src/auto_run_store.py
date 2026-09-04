@@ -213,6 +213,35 @@ class AutoRunStore:
             row = result.first()
             return int(row[0]) if row else 0
 
+    async def consecutive_llm_failures(self, *, lookback: int = 40) -> tuple[int, str]:
+        """최근 라이브 실행부터 거슬러 올라가며 연속 llm_failed 건수와 가장 최근 오류 메시지.
+
+        record_run 은 recommendation_sid UPSERT 라 run_at 이 갱신된다.
+        따라서 run_at DESC 가 곧 '최근 처리 순서'다.
+        llm_failed 가 아닌 행(성공·다른 오류·스킵)을 만나면 즉시 멈춘다.
+        """
+        query = text(
+            """
+            SELECT COALESCE(error_message, '') AS msg
+              FROM matching_ops_auto_run
+             WHERE dry_run = false
+             ORDER BY run_at DESC
+             LIMIT :lookback
+            """
+        )
+        async with self._session_factory() as session:
+            result = await session.execute(query, {"lookback": lookback})
+            rows = result.fetchall()
+        count = 0
+        latest = ""
+        for (msg,) in rows:
+            if not msg.startswith("llm_failed"):
+                break
+            if not latest:
+                latest = msg
+            count += 1
+        return count, latest
+
 
 _store: AutoRunStore | None = None
 

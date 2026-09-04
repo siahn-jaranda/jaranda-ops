@@ -32,6 +32,11 @@ class Settings(BaseSettings):
 
     # LLM 인사이트 — Anthropic Claude Sonnet 4.6. 키 미설정 시 인사이트 API 비활성.
     anthropic_api_key: str = ""
+    # 보조 키 — 주 키가 사용량 한도/과금/429/529 로 실패하면 이 키로 1회 재시도.
+    # 별도 Anthropic 조직(자체 결제)의 키여야 의미가 있다. 같은 조직의 키는
+    # 한도가 조직 단위라 함께 죽는다 (2026-09-04 09:40~11:50 KST 사고).
+    # 빈 값이면 폴백 없이 기존과 완전히 동일하게 동작한다.
+    anthropic_api_key_fallback: str = ""
     llm_model_id: str = "claude-sonnet-4-6"
     # 지원0 추천·지역 회수 전용 모델. 인사이트(llm_model_id)와 분리해 LLM_MODEL_ID 오버라이드 영향 안 받음 (WELL2-100).
     llm_recommend_model_id: str = "claude-sonnet-4-6"
@@ -70,6 +75,10 @@ class Settings(BaseSettings):
     # 실패 건 재시도 (2026-09-04 Anthropic 한도 소진 사고 대응)
     auto_dispatch_max_attempts: int = 4         # 이 횟수 도달하면 재시도 중단
     auto_dispatch_retry_after_minutes: int = 360  # 실패 후 재시도까지 대기 (6시간)
+    # LLM 연속 실패 알림 — 최근 실행이 연속 N건 llm_failed 면 슬랙 통보.
+    # 재알림은 (연속수 - 임계값) % alert_repeat_every == 0 일 때만 → 10분 cron 기준 1시간 간격.
+    llm_failure_alert_threshold: int = 3
+    llm_failure_alert_repeat_every: int = 6
 
     # 배포 전/후 비교 일일 리포트 (Cloud Scheduler → Slack n8n 릴레이)
     ab_report_webhook: str = ""                 # n8n 릴레이 URL. 빈 값이면 발송 안 함(계산만)

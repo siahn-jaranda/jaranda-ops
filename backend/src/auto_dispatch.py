@@ -328,6 +328,7 @@ async def run_once(
 
     # 5) 슬랙 (옵션)
     await _post_slack_summary(summary)
+    await _maybe_alert_llm_failures(summary, processed)
 
     return summary
 
@@ -768,6 +769,75 @@ def _make_summary(
         "total_denied_teachers": total_denied,
         "details": processed,
     }
+
+
+async def _maybe_alert_llm_failures(
+    summary: dict[str, Any], processed: list[dict[str, Any]]
+) -> None:
+    """LLM 이 연속으로 죽으면 슬랙 통보.
+
+    2026-09-04 사고 때는 09:40~11:50 동안 6건이 조용히 실패했고, GCP 에러 리포팅을
+    우연히 열어보고서야 알았다. 매 실행마다 시끄럽게 하지 않으려고
+    '연속 N건 도달 + 이후 M회마다'(10분 cron 기준 1시간 간격) 로만 보낸다.
+
+    발송 경로는 ab-daily 리포트와 같은 n8n 릴레이를 재사용한다
+    (AUTO_DISPATCH_SLACK_WEBHOOK 은 현재 미설정).
+    실패해도 자동 디스패치 본류에는 영향 없도록 전부 삼킨다.
+    """
+    if summary.get("dry_run"):
+        return  # dry_run 기록은 통계에서 제외되므로 연속 카운트가 무의미
+    if not any(r.get("error") == "llm_failed" for r in processed):
+        return
+    threshold = settings.llm_failure_alert_threshold
+    if threshold <= 0 or not auto_run_available():
+        return
+    try:
+        count, latest = await get_auto_run_store().consecutive_llm_failures()
+    except Exception:
+        logger.exception("consecutive_llm_failures 조회 실패 (graceful)")
+        return
+    if count < threshold:
+        return
+    every = max(1, settings.llm_failure_alert_repeat_every)
+    if (count - threshold) % every != 0:
+        return
+
+    url = (settings.ab_report_webhook or settings.auto_dispatch_slack_webhook).strip()
+    if not url:
+        logger.error("LLM 연속 실패 %d건 — 알림 웹훅 미설정이라 로그만 남김", count)
+        return
+
+    llm = None
+    try:
+        llm = get_llm_client()
+    except Exception:  # noqa: BLE001
+        pass
+    fb = "보조 키 설정됨" if (llm is not None and llm.has_fallback) else "*보조 키 없음*"
+    text = (
+        "🚨 *matching-ops 자동 디스패치 — LLM 연속 실패 %d건*\n"
+        "model=`%s` · %s\n"
+        "최근 오류: ```%s```\n"
+        "_실패 건은 %d분 후 재시도되며 %d회 도달 시 중단됩니다. "
+        "한도 소진이면 Anthropic 콘솔에서 usage limit 을 확인하세요._"
+    ) % (
+        count,
+        settings.llm_recommend_model_id,
+        fb,
+        (latest or "(메시지 없음)")[:300],
+        settings.auto_dispatch_retry_after_minutes,
+        settings.auto_dispatch_max_attempts,
+    )
+    payload: dict[str, Any] = {"text": text}
+    target = settings.ab_report_slack_target.strip()
+    if target and url == settings.ab_report_webhook.strip():
+        payload["channel"] = target
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.post(url, json=payload)
+        if res.status_code >= 400:
+            logger.error("llm failure alert webhook %s %s", res.status_code, res.text[:200])
+    except Exception:
+        logger.exception("llm failure alert post failed (graceful)")
 
 
 async def _post_slack_summary(summary: dict[str, Any]) -> None:
