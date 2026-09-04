@@ -252,7 +252,11 @@ async def run_once(
     logger.info("auto_dispatch step1 raw_candidates=%d", len(sids_pre))
 
     # 2) PG 제외
-    excluded = await store.get_excluded_sids(sids_pre)
+    excluded = await store.get_excluded_sids(
+        sids_pre,
+        max_attempts=settings.auto_dispatch_max_attempts,
+        retry_after_minutes=settings.auto_dispatch_retry_after_minutes,
+    )
     eligible = [r for r in raw if r["sid"] not in excluded]
     logger.info(
         "auto_dispatch step2 excluded=%d eligible=%d",

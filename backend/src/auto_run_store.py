@@ -71,12 +71,19 @@ class AutoRunStore:
             sids = [r[0] for r in (await session.execute(sids_q, {"s": start, "e": end}))]
         return dict(m or {}), sids
 
-    async def get_excluded_sids(self, sids: list[str]) -> set[str]:
+    async def get_excluded_sids(
+        self, sids: list[str], *, max_attempts: int = 4, retry_after_minutes: int = 360
+    ) -> set[str]:
         """주어진 sid 중 자동 디스패치 제외할 sid 집합.
 
         OR 신호:
-          1) matching_ops_auto_run.recommendation_sid IN sids AND dry_run=false
-             — 이 자동화가 처리한 이력 (live)
+          1) matching_ops_auto_run (dry_run=false) 중 아래 하나라도 해당
+             a. succeed_count > 0        — 실제로 선생님을 추가함 (영구 제외)
+             b. attempt_count >= max     — 재시도 소진 (영구 제외)
+             c. run_at > NOW() - backoff — 방금 시도함 (백오프 중, 일시 제외)
+             즉 **실패한 건은 백오프 뒤 재시도된다.**
+             2026-09-04 이전에는 성공 여부를 보지 않고 행만 있으면 제외했다.
+             그 탓에 Anthropic 한도 소진으로 실패한 6건이 영구 이탈했다(sql/0012).
           2) matching_ops_memo.recommendation_sid IN sids
              — 운영자가 매칭-ops 대시보드에서 메모 작성
           3) matching_ops_handler.application_sid IN sids
@@ -96,6 +103,11 @@ class AutoRunStore:
               FROM matching_ops_auto_run
              WHERE recommendation_sid = ANY(:sids)
                AND dry_run = false
+               AND (
+                     succeed_count > 0
+                  OR attempt_count >= :max_attempts
+                  OR run_at > NOW() - make_interval(mins => :retry_after)
+               )
             UNION
             SELECT application_sid AS sid
               FROM matching_ops_memo
@@ -107,7 +119,11 @@ class AutoRunStore:
             """
         )
         async with self._session_factory() as session:
-            rows = await session.execute(query, {"sids": sids})
+            rows = await session.execute(query, {
+                "sids": sids,
+                "max_attempts": max_attempts,
+                "retry_after": retry_after_minutes,
+            })
             return {str(row._mapping["sid"]) for row in rows}
 
     async def record_run(
@@ -139,10 +155,10 @@ class AutoRunStore:
             INSERT INTO matching_ops_auto_run
                 (recommendation_sid, run_at, pool_size, added_count, succeed_count,
                  denied_count, llm_model_id, dry_run, operator_email, error_message,
-                 variant, pre_responder_count, added_teacher_sids)
+                 variant, pre_responder_count, added_teacher_sids, attempt_count)
             VALUES
                 (:sid, NOW(), :pool, :added, :succeed, :denied, :model, :dry,
-                 :email, :err, :variant, :pre_resp, :added_sids)
+                 :email, :err, :variant, :pre_resp, :added_sids, 1)
             ON CONFLICT (recommendation_sid) DO UPDATE SET
                 run_at         = NOW(),
                 pool_size      = EXCLUDED.pool_size,
@@ -155,7 +171,8 @@ class AutoRunStore:
                 error_message  = EXCLUDED.error_message,
                 variant        = EXCLUDED.variant,
                 pre_responder_count = EXCLUDED.pre_responder_count,
-                added_teacher_sids  = EXCLUDED.added_teacher_sids
+                added_teacher_sids  = EXCLUDED.added_teacher_sids,
+                attempt_count       = matching_ops_auto_run.attempt_count + 1
             """
         )
         async with self._session_factory() as session:

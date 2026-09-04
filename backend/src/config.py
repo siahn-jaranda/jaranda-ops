@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     auto_dispatch_admin_emails: str = ""        # 수동 트리거 허용 운영자 (쉼표 구분). 빈 값=모두 허용
     auto_dispatch_slack_webhook: str = ""       # 슬랙 알림 URL (옵션)
     auto_dispatch_trigger_secret: str = ""      # X-Trigger-Secret 헤더 우회 (CLI·Cloud Scheduler용)
+    # 실패 건 재시도 (2026-09-04 Anthropic 한도 소진 사고 대응)
+    auto_dispatch_max_attempts: int = 4         # 이 횟수 도달하면 재시도 중단
+    auto_dispatch_retry_after_minutes: int = 360  # 실패 후 재시도까지 대기 (6시간)
 
     # 배포 전/후 비교 일일 리포트 (Cloud Scheduler → Slack n8n 릴레이)
     ab_report_webhook: str = ""                 # n8n 릴레이 URL. 빈 값이면 발송 안 함(계산만)
