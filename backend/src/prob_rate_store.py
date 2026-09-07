@@ -202,6 +202,66 @@ def build_cells(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def lookup(table: dict[tuple[str, str, int, int], tuple[float, int]],
+           seg: str, bucket: str, reuse: int, responder: int) -> tuple[float, bool] | None:
+    """서빙과 **같은** 조회 규칙. (rate, is_leaf). 없으면 None.
+
+    감시가 서빙과 다른 규칙으로 조회하면 채점이 무의미해지므로 한 곳에 둔다.
+    """
+    hit = table.get((seg, bucket, reuse, responder))
+    if hit:
+        return hit[0], True
+    hit = table.get((seg, bucket, -1, -1))
+    if hit:
+        return hit[0], False
+    return None
+
+
+def score_table(fit_cells: list[dict[str, Any]], test_raw: list[dict[str, Any]],
+                min_cell_n: int) -> dict[str, Any]:
+    """fit_cells 로 만든 표를 test_raw 실측으로 채점.
+
+    반환 = {rows, mae, n, by_seg, skipped}. mae 는 채점 표본 수로 가중한 절대오차(%p).
+    표본이 min_cell_n 미만인 셀은 뺀다 — n=4 짜리 셀의 0% 를 오차로 세면 노이즈만 커진다.
+    """
+    table = {(c["seg"], c["age_bucket"], c["reuse"], c["responder"]): (c["rate"], c["n"])
+             for c in fit_cells}
+    rows: list[dict[str, Any]] = []
+    skipped = 0
+    for t in test_raw:
+        n, m = int(t["n"]), int(t["matched"])
+        if n < min_cell_n:
+            skipped += 1
+            continue
+        got = lookup(table, t["seg"], t["age_bucket"], int(t["reuse"]), int(t["responder"]))
+        if got is None:
+            skipped += 1
+            continue
+        pred, is_leaf = got
+        actual = 100.0 * m / n
+        rows.append({"seg": t["seg"], "age_bucket": t["age_bucket"],
+                     "reuse": int(t["reuse"]), "responder": int(t["responder"]),
+                     "n": n, "predicted": round(pred, 2), "actual": round(actual, 2),
+                     "err": round(abs(pred - actual), 2), "leaf": is_leaf})
+
+    def _mae(rs: list[dict[str, Any]]) -> tuple[float | None, int]:
+        tot = sum(r["n"] for r in rs)
+        if not tot:
+            return None, 0
+        return round(sum(r["err"] * r["n"] for r in rs) / tot, 2), tot
+
+    mae, total_n = _mae(rows)
+    by_seg = {}
+    for seg in SEGS:
+        sub = [r for r in rows if r["seg"] == seg]
+        if sub:
+            v, sn = _mae(sub)
+            by_seg[seg] = {"mae": v, "n": sn, "cells": len(sub)}
+    rows.sort(key=lambda r: -r["err"])
+    return {"rows": rows, "mae": mae, "n": total_n, "cells": len(rows),
+            "by_seg": by_seg, "skipped": skipped}
+
+
 _store: ProbRateStore | None = None
 
 

@@ -434,15 +434,17 @@ class JarandaReplica:
             return {int(row._mapping["id"]): row._mapping["name"] for row in result}
 
     async def prob_rate_cohort(
-        self, *, window_days: int = 90, settle_days: int = 30
+        self, *, start_days_ago: int = 90, end_days_ago: int = 30
     ) -> list[dict]:
         """예상 매칭확률 비율표용 정착 코호트 집계.
 
         (seg, age_bucket, reuse, responder) 별 건수와 매칭 건수를 돌려준다.
         매칭 정의 = status IN (40, 90).
 
-        정착(settle) — created_at <= now - settle_days 인 건만 센다. 결과가 여물 시간을
-        안 주면 최근 건이 전부 '미매칭'으로 잡혀 비율이 낮게 깎인다.
+        코호트 = created_at 이 [now - start_days_ago, now - end_days_ago] 인 신청서.
+        end_days_ago 가 정착(settle) 여유다 — 결과가 여물 시간을 안 주면 최근 건이
+        전부 '미매칭'으로 잡혀 비율이 낮게 깎인다.
+        회귀 감시(backtest)는 여기에 더 오래된 구간을 넣어 과거 표를 재현한다.
 
         각 구간은 대표 관측 시점(3h / 24h / 72h) 스냅샷으로 만든다.
         그 시점에 **아직 열려 있던** 건만 세는 게 핵심 — 이미 확정·취소된 건을 넣으면
@@ -476,8 +478,8 @@ class JarandaReplica:
                              WHERE t.recommendation_sid = r.sid
                                AND (t.applied = 1 OR t.accepted = 1)) AS first_resp
                       FROM recommendation r
-                     WHERE r.created_at >= DATE_SUB(NOW(), INTERVAL :window_days DAY)
-                       AND r.created_at <= DATE_SUB(NOW(), INTERVAL :settle_days DAY)
+                     WHERE r.created_at >= DATE_SUB(NOW(), INTERVAL :start_days DAY)
+                       AND r.created_at <= DATE_SUB(NOW(), INTERVAL :end_days DAY)
                    ) f
               JOIN (
                         SELECT 'lt6h' AS bucket, 3 AS h
@@ -493,7 +495,7 @@ class JarandaReplica:
         )
         async with self._session_factory() as session:
             rows = (await session.execute(
-                query, {"window_days": window_days, "settle_days": settle_days}
+                query, {"start_days": start_days_ago, "end_days": end_days_ago}
             )).fetchall()
         return [
             {"seg": r[0], "age_bucket": r[1], "reuse": int(r[2]),

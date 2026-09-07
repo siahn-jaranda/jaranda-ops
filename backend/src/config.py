@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     # 정착 30일 — 결과가 여물 시간을 안 주면 최근 건이 전부 미매칭으로 잡혀 비율이 깎인다.
     prob_rate_window_days: int = 90
     prob_rate_settle_days: int = 30
+    # 회귀 감시 — 월 1회 백테스트. 과거 구간으로 표를 재현해 그 다음 구간 실제값으로 채점한다.
+    # 학습 [now-150d, now-90d] → 채점 [now-90d, now-30d](= 현행 표와 같은 구간).
+    # "60일 전 방식으로 만든 표가 지금 얼마나 틀렸나" = 오늘 표의 향후 오차 추정치.
+    prob_rate_audit_lag_days: int = 60          # 학습 구간을 이만큼 더 과거로 민다
+    prob_rate_audit_mae_threshold: float = 5.0  # 가중 MAE 가 이걸 넘으면 경보
+    prob_rate_audit_min_cell_n: int = 30        # 채점 표본이 이보다 얇은 셀은 제외
+    prob_rate_audit_slack_target: str = "C01S3R69F26"
 
     # 배포 전/후 비교 일일 리포트 (Cloud Scheduler → Slack n8n 릴레이)
     ab_report_webhook: str = ""                 # n8n 릴레이 URL. 빈 값이면 발송 안 함(계산만)
