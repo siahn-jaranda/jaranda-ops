@@ -690,6 +690,7 @@ input, textarea, select { font-family: inherit; }
       <nav class="tabs">
         <button class="btn-tab active" data-tab="matching" onclick="switchTab('matching')">신청서 목록</button>
         <button class="btn-tab" data-tab="managed" onclick="switchTab('managed')">관리 신청서 목록</button>
+        <button class="btn-tab" data-tab="manual" onclick="switchTab('manual')">수동관리 신청서</button>
         <button class="btn-tab" data-tab="insight" onclick="switchTab('insight')">인사이트 도출</button>
       </nav>
     </div>
@@ -777,6 +778,32 @@ input, textarea, select { font-family: inherit; }
     <div class="list-grid" id="managed-list-grid">
       <div id="managed-list-area"></div>
       <div id="managed-detail-area"></div>
+    </div>
+  </main>
+
+  <main id="page-manual" class="main-pad" style="display:none">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span class="title">수동관리 신청서</span>
+          <span class="count-chip" id="manual-count-chip">0건</span>
+        </div>
+        <div class="divider-v"></div>
+        <span style="font-size:12.5px;color:#6B7280" id="manual-sub">플래너가 위에서부터 처리하는 우선순위 목록</span>
+      </div>
+      <div class="toolbar-left" style="gap:10px">
+        <button class="btn btn-secondary" onclick="loadManualOps(null, true)"><span class="icon">&#8635;</span>새로고침</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin:0 0 12px">
+      <button class="btn-tab active" data-menu="recommended" onclick="switchManualMenu('recommended')">선생님 추천 상태 신청서</button>
+      <button class="btn-tab" data-menu="intake" onclick="switchManualMenu('intake')">접수안내 신청서</button>
+    </div>
+
+    <div class="list-grid" id="manual-list-grid">
+      <div id="manual-list-area"></div>
+      <div id="manual-detail-area"></div>
     </div>
   </main>
 
@@ -1437,6 +1464,105 @@ function renderManaged() {
   listArea.innerHTML = renderCardView(MANAGED);
   // 상세 패널 — 메인과 동일하게 selectedId 기준
   const sel = MANAGED.find(a => a.id === state.selectedId) || null;
+  detailArea.innerHTML = renderDetailPanel(sel);
+}
+
+// ====== 수동관리 신청서 ======
+// 두 메뉴. 우선순위는 필터가 아니라 배경 정렬 — 응답은 이미 정렬된 순서로 온다.
+// 그 순서를 프론트에서 다시 정렬하면 백엔드가 정한 우선순위가 무너진다.
+let MANUAL = { menu: 'recommended', groups: [], rows: [], loadedAt: 0, loading: false };
+
+const MANUAL_GROUP_TONE = { waiting: '#B45309', low: '#B91C1C', stale: '#B45309' };
+
+function switchManualMenu(menu) {
+  if (MANUAL.menu === menu && MANUAL.rows.length) return;
+  MANUAL.menu = menu;
+  document.querySelectorAll('#page-manual .btn-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.menu === menu));
+  MANUAL.rows = [];
+  MANUAL.groups = [];
+  loadManualOps(menu, true);
+}
+
+async function loadManualOps(menu, force) {
+  if (!authToken) { showGate(); return; }
+  const m = menu || MANUAL.menu;
+  if (!force && MANUAL.menu === m && Date.now() - MANUAL.loadedAt < 10000) { renderManual(); return; }
+  MANUAL.menu = m;
+  MANUAL.loading = true;
+  renderManual();
+  try {
+    const r = await fetch(API_BASE + '/api/manual-ops?menu=' + encodeURIComponent(m), {
+      headers: {'Authorization': 'Bearer ' + authToken},
+    });
+    if (r.status === 401) { showGate('세션이 만료되었습니다. 다시 로그인해주세요.'); return; }
+    if (!r.ok) throw new Error('manual-ops ' + r.status);
+    const data = await r.json();
+    MANUAL.groups = data.groups || [];
+    MANUAL.rows = data.rows || [];
+    MANUAL.poolSize = data.poolSize || 0;
+    MANUAL.loadedAt = Date.now();
+    MANUAL.loading = false;
+    renderManual();
+  } catch (e) {
+    MANUAL.loading = false;
+    console.warn('manual-ops fetch failed:', e.message);
+    document.getElementById('manual-list-area').innerHTML =
+      `<div class="empty-feed">수동관리 목록을 불러오지 못했습니다 (${escapeHtml(e.message)}).</div>`;
+  }
+}
+
+function manualGroupHeader(g) {
+  const tone = MANUAL_GROUP_TONE[g.key] || '#374151';
+  return `<div style="display:flex;align-items:baseline;gap:8px;margin:18px 0 8px;padding-left:2px">
+    <span style="font-size:13.5px;font-weight:800;color:${tone}">${escapeHtml(g.label)}</span>
+    <span class="count-chip">${g.count}건</span>
+    <span style="font-size:12px;color:#6B7280">${escapeHtml(g.hint || '')}</span>
+  </div>`;
+}
+
+function renderManual() {
+  const listArea = document.getElementById('manual-list-area');
+  const detailArea = document.getElementById('manual-detail-area');
+  const chip = document.getElementById('manual-count-chip');
+  const sub = document.getElementById('manual-sub');
+  if (!listArea) return;
+
+  if (MANUAL.loading && !MANUAL.rows.length) {
+    chip.textContent = '불러오는 중';
+    listArea.innerHTML = renderSkeletonCards(4);
+    detailArea.innerHTML = '';
+    return;
+  }
+
+  chip.textContent = `${MANUAL.rows.length}건`;
+  sub.textContent = MANUAL.menu === 'intake'
+    ? `접수안내 ${MANUAL.poolSize || 0}건 중 처리 대상`
+    : '선생님을 추천했는데 부모님 확정이 없는 건 — 오래된 순';
+
+  if (!MANUAL.rows.length) {
+    listArea.innerHTML = `<div class="empty-feed">지금 처리할 신청서가 없습니다.</div>`;
+    detailArea.innerHTML = '';
+    return;
+  }
+
+  // 그룹이 여러 개면 섹션으로 나눠 그린다. opsGroup 이 없으면(단일 그룹) 통째로.
+  const parts = [];
+  if (MANUAL.groups.length > 1) {
+    MANUAL.groups.forEach(g => {
+      const rows = MANUAL.rows.filter(r => r.opsGroup === g.key);
+      if (!rows.length) return;
+      parts.push(manualGroupHeader(g));
+      parts.push(renderCardView(rows.map(backendToApp)));
+    });
+  } else {
+    if (MANUAL.groups.length === 1) parts.push(manualGroupHeader(MANUAL.groups[0]));
+    parts.push(renderCardView(MANUAL.rows.map(backendToApp)));
+  }
+  listArea.innerHTML = parts.join('');
+
+  const all = MANUAL.rows.map(backendToApp);
+  const sel = all.find(a => a.id === state.selectedId) || null;
   detailArea.innerHTML = renderDetailPanel(sel);
 }
 
@@ -2161,6 +2287,8 @@ function selectApp(id) {
   // 관리 탭: 자체 renderManaged 가 상세 패널 처리. 메인 탭: render().
   if (state.tab === 'managed') {
     renderManaged();
+  } else if (state.tab === 'manual') {
+    renderManual();
   } else {
     render();
   }
@@ -2192,8 +2320,10 @@ function switchTab(t) {
   document.querySelectorAll('.tabs .btn-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.getElementById('page-matching').style.display = t === 'matching' ? '' : 'none';
   document.getElementById('page-managed').style.display = t === 'managed' ? '' : 'none';
+  document.getElementById('page-manual').style.display = t === 'manual' ? '' : 'none';
   document.getElementById('page-insight').style.display = t === 'insight' ? '' : 'none';
   if (t === 'managed') loadManagedData();
+  if (t === 'manual') loadManualOps();
   if (t === 'insight') loadInsightOptions();
 }
 
