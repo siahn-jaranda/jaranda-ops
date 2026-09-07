@@ -433,6 +433,49 @@ class JarandaReplica:
             result = await session.execute(query)
             return {int(row._mapping["id"]): row._mapping["name"] for row in result}
 
+    async def list_manual_ops_sids(
+        self, *, menu: str, stale_hours: int = 48, limit: int = 500
+    ) -> list[str]:
+        """[수동관리 신청서] 두 메뉴의 대상 sid.
+
+        - recommended — 선생님 추천 상태(20)가 된 지 stale_hours 경과.
+          경과 기준은 suggested_at(선생님 추천 발송 시각). 제로데이트는 제외한다.
+          오래 방치된 순(오름차순)이 곧 처리 우선순위다.
+        - intake — 접수안내(10) 전건. 매칭확률 분위는 라우트에서 자른다.
+          확률 계산이 파이썬 쪽(_compute_prob)이라 SQL 로 자를 수 없고,
+          접수안내는 상시 100건대라 전건을 가져와도 부담이 없다.
+
+        sid 만 돌려주고 본문은 기존 목록 파이프라인(list_recent_recommendations +
+        augment + _to_row)을 그대로 재사용한다 — 카드 스키마를 두 벌 만들지 않으려는 것.
+        """
+        if menu == "recommended":
+            query = text(
+                """
+                SELECT r.sid
+                  FROM recommendation r
+                 WHERE r.status = 20
+                   AND r.suggested_at > '2000-01-01'
+                   AND r.suggested_at <= DATE_SUB(NOW(), INTERVAL :stale_hours HOUR)
+                 ORDER BY r.suggested_at ASC
+                 LIMIT :limit
+                """
+            )
+            params = {"stale_hours": stale_hours, "limit": limit}
+        else:
+            query = text(
+                """
+                SELECT r.sid
+                  FROM recommendation r
+                 WHERE r.status = 10
+                 ORDER BY r.created_at DESC
+                 LIMIT :limit
+                """
+            )
+            params = {"limit": limit}
+        async with self._session_factory() as session:
+            rows = (await session.execute(query, params)).fetchall()
+        return [str(r[0]) for r in rows]
+
     async def prob_rate_cohort(
         self, *, start_days_ago: int = 90, end_days_ago: int = 30,
         split_days_ago: int | None = None,

@@ -22,6 +22,7 @@ from src.routes import (
     handlers,
     insights,
     managed,
+    manual_ops,
     memos,
     prob_rate,
     reports,
@@ -61,6 +62,9 @@ app.include_router(handlers.router, dependencies=[Depends(auth.require_auth)])
 
 # 관리 신청서 목록 — 라우트 내부에서 trigger_auth 사용 (Google 세션 OR X-Trigger-Secret)
 app.include_router(managed.router)
+
+# 수동관리 신청서 — 인증은 라우터 내부 trigger_auth
+app.include_router(manual_ops.router)
 
 # LLM 인사이트 — POST는 호출당 비용. 라우트 내부에서 일일 한도 가드.
 app.include_router(insights.router, dependencies=[Depends(auth.require_auth)])
