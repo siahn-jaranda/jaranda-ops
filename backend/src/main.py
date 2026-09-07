@@ -23,6 +23,7 @@ from src.routes import (
     insights,
     managed,
     memos,
+    prob_rate,
     reports,
 )
 
@@ -76,6 +77,9 @@ app.include_router(aggregated_insights.router)
 
 # 배포 전/후 비교 일일 리포트 — 자체 인증(X-Trigger-Secret 또는 세션)
 app.include_router(reports.router)
+
+# 예상 매칭확률 비율표 — 조회·갱신 모두 trigger_auth (세션 또는 X-Trigger-Secret)
+app.include_router(prob_rate.router)
 
 
 @app.get("/")

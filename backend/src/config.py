@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     llm_failure_alert_threshold: int = 3
     llm_failure_alert_repeat_every: int = 6
 
+    # 예상 매칭확률 비율표 (Cloud Scheduler → POST /api/prob-rate/refresh)
+    # 학습창 90일 — 2026-07-02 자동 디스패치 승격 같은 개입을 몇 주 안에 흡수해야 한다.
+    # 정착 30일 — 결과가 여물 시간을 안 주면 최근 건이 전부 미매칭으로 잡혀 비율이 깎인다.
+    prob_rate_window_days: int = 90
+    prob_rate_settle_days: int = 30
+
     # 배포 전/후 비교 일일 리포트 (Cloud Scheduler → Slack n8n 릴레이)
     ab_report_webhook: str = ""                 # n8n 릴레이 URL. 빈 값이면 발송 안 함(계산만)
     ab_report_slack_target: str = ""            # Slack 채널 ID 또는 사용자 ID(=DM)

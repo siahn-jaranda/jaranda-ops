@@ -433,6 +433,74 @@ class JarandaReplica:
             result = await session.execute(query)
             return {int(row._mapping["id"]): row._mapping["name"] for row in result}
 
+    async def prob_rate_cohort(
+        self, *, window_days: int = 90, settle_days: int = 30
+    ) -> list[dict]:
+        """예상 매칭확률 비율표용 정착 코호트 집계.
+
+        (seg, age_bucket, reuse, responder) 별 건수와 매칭 건수를 돌려준다.
+        매칭 정의 = status IN (40, 90).
+
+        정착(settle) — created_at <= now - settle_days 인 건만 센다. 결과가 여물 시간을
+        안 주면 최근 건이 전부 '미매칭'으로 잡혀 비율이 낮게 깎인다.
+
+        각 구간은 대표 관측 시점(3h / 24h / 72h) 스냅샷으로 만든다.
+        그 시점에 **아직 열려 있던** 건만 세는 게 핵심 — 이미 확정·취소된 건을 넣으면
+        "지금 열려 있는 신청서가 앞으로 매칭될 확률"이라는 질문에 답하지 못한다.
+
+        성능: 신청서당 팩트를 derived table 에서 **한 번만** 만들고 구간 3개를 교차
+        조인한다. 구간마다 상관 서브쿼리를 다시 도는 형태로 짜면 평가 횟수가 3배가 되어
+        90일 코호트에서도 분 단위로 늘어진다.
+        """
+        query = text(
+            """
+            SELECT f.seg, b.bucket AS age_bucket, f.reuse,
+                   (f.first_resp IS NOT NULL
+                    AND f.first_resp <= DATE_ADD(f.created_at, INTERVAL b.h HOUR)) AS responder,
+                   COUNT(*) AS n,
+                   SUM(f.m) AS matched
+              FROM (
+                    SELECT r.sid, r.created_at, r.confirmed_at, r.cancelled_at,
+                           CASE WHEN r.is_urgent = 1 THEN 'urgent'
+                                WHEN r.regularity = 3 THEN 'reg3'
+                                ELSE 'reg2' END AS seg,
+                           (r.status IN (40, 90)) AS m,
+                           (SELECT COUNT(*) FROM recommendation q
+                             WHERE q.parent_account_sid = r.parent_account_sid
+                               AND q.created_at < r.created_at
+                               AND q.status IN (40, 90)) > 0 AS reuse,
+                           (SELECT MIN(COALESCE(
+                                     NULLIF(t.last_responded_at, '0000-00-00 00:00:00'),
+                                     t._created_at))
+                              FROM recommendation_teachers t
+                             WHERE t.recommendation_sid = r.sid
+                               AND (t.applied = 1 OR t.accepted = 1)) AS first_resp
+                      FROM recommendation r
+                     WHERE r.created_at >= DATE_SUB(NOW(), INTERVAL :window_days DAY)
+                       AND r.created_at <= DATE_SUB(NOW(), INTERVAL :settle_days DAY)
+                   ) f
+              JOIN (
+                        SELECT 'lt6h' AS bucket, 3 AS h
+              UNION ALL SELECT '6to48h', 24
+              UNION ALL SELECT 'gte48h', 72
+                   ) b
+             WHERE (f.confirmed_at <= '2000-01-01'
+                    OR f.confirmed_at > DATE_ADD(f.created_at, INTERVAL b.h HOUR))
+               AND (f.cancelled_at <= '2000-01-01'
+                    OR f.cancelled_at > DATE_ADD(f.created_at, INTERVAL b.h HOUR))
+             GROUP BY f.seg, b.bucket, f.reuse, responder
+            """
+        )
+        async with self._session_factory() as session:
+            rows = (await session.execute(
+                query, {"window_days": window_days, "settle_days": settle_days}
+            )).fetchall()
+        return [
+            {"seg": r[0], "age_bucket": r[1], "reuse": int(r[2]),
+             "responder": int(r[3]), "n": int(r[4]), "matched": int(r[5] or 0)}
+            for r in rows
+        ]
+
     async def outcome_stats(self, sids: list[str], until=None) -> dict[str, int]:
         """자동 디스패치가 처리한 신청서들의 성과 집계.
 

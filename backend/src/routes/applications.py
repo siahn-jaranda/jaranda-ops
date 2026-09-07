@@ -20,6 +20,12 @@ from src.db import get_replica
 from src.firestore_chat import find_chat_status, firestore_available
 from src.handler_store import get_handler_store, handler_store_available
 from src.memo_store import get_memo_store, memo_store_available
+from src.prob_rate_store import (
+    age_bucket as prob_age_bucket,
+    get_prob_rate_store,
+    prob_rate_available,
+    segment as prob_segment,
+)
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 logger = logging.getLogger(__name__)
@@ -323,6 +329,10 @@ def _compute_prob(
     is_new: bool | None,
     timer_min: int | None,
     is_urgent: bool,
+    *,
+    seg: str | None = None,
+    age_bucket: str | None = None,
+    rates: dict[tuple[str, str, int, int], tuple[float, int]] | None = None,
 ) -> dict[str, Any]:
     """매칭 확률을 dict로 반환. {value: 0~100, source: heuristic|actual}.
 
@@ -346,6 +356,24 @@ def _compute_prob(
         return {"value": 0, "source": "actual"}
     if _is_real_ts(confirmed):
         return {"value": 100, "source": "actual"}
+
+    # 비율표 조회 — 셀의 과거 실측 매칭률을 그대로 예측값으로 쓴다.
+    # reuse 는 '확인된 재이용'만 1. is_new=None(이력 조회 실패)은 신규로 접지 않고
+    # 상위 셀(reuse=-1)로 보낸다 — 모름을 유리·불리 어느 쪽으로도 밀지 않기 위함.
+    if rates and seg and age_bucket:
+        responder = 1 if applied_count > 0 else 0
+        keys: list[tuple[str, str, int, int]] = []
+        if is_new is not None:
+            keys.append((seg, age_bucket, 0 if is_new else 1, responder))
+        keys.append((seg, age_bucket, -1, -1))
+        for key in keys:
+            hit = rates.get(key)
+            if hit:
+                rate, n = hit
+                # 상위 셀(reuse=-1)로 떨어졌으면 fallback — 근거 셀이 잎이 아님을 UI 에 알린다
+                return {"value": max(0, min(100, round(rate))),
+                        "source": "empirical" if key[2] != -1 else "fallback",
+                        "n": n, "cell": "/".join(str(x) for x in key)}
 
     score = 30
     if applied_count >= 1:
@@ -630,6 +658,17 @@ def _to_frontend_teacher(
     }
 
 
+async def _load_rates() -> dict[tuple[str, str, int, int], tuple[float, int]] | None:
+    """비율표 로드. 실패해도 None 을 돌려 휴리스틱으로 흘려보낸다(목록이 죽으면 안 된다)."""
+    if not prob_rate_available():
+        return None
+    try:
+        return await get_prob_rate_store().load()
+    except Exception:
+        logger.exception("prob_rate load failed (graceful)")
+        return None
+
+
 def _to_row(
     rec: dict[str, Any],
     subject_map: dict[int, str],
@@ -644,6 +683,8 @@ def _to_row(
     teacher_availability_map: dict[str, set[str]] | None = None,
     chat_room_map: dict[tuple[str, str], dict[str, Any]] | None = None,
     memo_meta: dict[str, Any] | None = None,
+    *,
+    rates: dict[tuple[str, str, int, int], tuple[float, int]] | None = None,
 ) -> dict[str, Any]:
     """DB row → 페이지 사용 스키마.
 
@@ -675,9 +716,15 @@ def _to_row(
         ca = created_at if created_at.tzinfo else created_at.replace(tzinfo=KST)
         created_at_iso = ca.isoformat()
         created_at_full = ca.strftime("%Y-%m-%d %H:%M")
+        age_min: float | None = (datetime.now(KST) - ca).total_seconds() / 60
     else:
         created_at_iso = None
         created_at_full = "—"
+        age_min = None
+
+    # 비율표 셀 좌표 — 상품군과 신청서 나이구간
+    prob_seg = prob_segment(rec.get("regularity"), rec.get("is_urgent"))
+    prob_bucket = prob_age_bucket(age_min)
 
     charge = rec.get("estimated_charge")
     price_str = f"{int(charge):,}원" if charge else "—"
@@ -746,6 +793,9 @@ def _to_row(
             is_new,
             timer,
             bool(rec.get("is_urgent")),
+            seg=prob_seg,
+            age_bucket=prob_bucket,
+            rates=rates,
         ),
         "result": result,
         "resultType": result_type,
@@ -919,6 +969,8 @@ async def list_applications(
         except Exception:
             logger.exception("memo batch fetch failed (graceful)")
 
+    rates = await _load_rates()
+
     return {
         "count": len(rows),
         "filter": {"from": date_from, "to": date_to, "limit": limit, "offset": offset},
@@ -938,6 +990,7 @@ async def list_applications(
                 teacher_availability_map,
                 chat_room_map,
                 memo_meta_map.get(str(r.get("sid"))),
+                rates=rates,
             )
             for r in rows
         ],
@@ -1050,6 +1103,7 @@ async def get_application(sid: str) -> dict[str, Any]:
         teacher_availability_map,
         chat_room_map,
         memo_meta,
+        rates=await _load_rates(),
     )
 
 
