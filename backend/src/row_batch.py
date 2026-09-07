@@ -25,7 +25,7 @@ async def _handler_batch(sids: list[str]) -> dict[str, dict[str, Any]]:
     if not handler_store_available() or not sids:
         return {}
     try:
-        return await get_handler_store().get_many(sids)
+        return await get_handler_store().list_by_sids(sids)
     except Exception:
         logger.exception("handler batch fetch failed (graceful)")
         return {}
