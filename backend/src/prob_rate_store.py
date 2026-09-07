@@ -7,11 +7,12 @@
 옵시디언 `수동매칭 대시보드/matching-ops 예상 매칭확률 캘리브레이션.md` 참고.
 
 표가 없거나 조회에 실패해도 서빙은 멈추지 않는다 — _DEFAULT_RATES 로 폴백한다.
-이 기본값은 2026-02-01~08-07 실측(축소 적용 후)이며, 갱신 배치가 돌면 덮인다.
+이 기본값은 2026-09-07 기준 롤링 90일(정착 10일) 실측이며, 갱신 배치가 돌면 덮인다.
 """
 from __future__ import annotations
 
 import logging
+import math
 import time
 from typing import Any
 
@@ -27,56 +28,63 @@ AGE_BUCKETS = ("lt6h", "6to48h", "gte48h")
 # 구간별 대표 관측 시점(시간). 갱신 배치가 이 시점 스냅샷으로 비율을 만든다.
 BUCKET_SNAPSHOT_H = {"lt6h": 3, "6to48h": 24, "gte48h": 72}
 # 축소 강도. 셀 표본이 K 와 같아지면 상위 셀과 반반 섞인다.
-SHRINK_K = 50
+SHRINK_K = 100
 # 이보다 얇은 셀은 아예 상위 셀 값을 쓴다.
+# 올리면 오히려 나빠진다(실측: 250 으로 올리면 MAE 1.59 → 1.83%p) — 얇은 셀도
+# 축소해서 쓰는 편이 상위 셀 값으로 뭉개는 것보다 낫다.
 MIN_CELL_N = 30
 
+# 응답유무로 쪼개지 않는 세그먼트. reg2 는 셀당 표본이 150~330건이라 4셀을 감당하지만
+# reg3·urgent 는 30~110건이라 쪼개면 노이즈가 오차를 지배한다.
+# 실측: reg3/urgent 를 통합하면 최대 셀오차 15.4%p → 10.5%p, 12%p 초과 셀 1개 → 0개.
+# (전체 평균 MAE 는 1.59 → 1.58%p 로 사실상 동일 — 정확도를 잃지 않고 편차만 줄인다)
+COLLAPSE_RESPONDER_SEGS = frozenset({"reg3", "urgent"})
+
+
+def cell_key(seg: str, age_bucket: str, reuse: int, responder: int) -> tuple[str, str, int, int]:
+    """잎 셀 키. 학습·서빙·채점이 반드시 이 함수를 거쳐야 한다.
+
+    셋 중 하나라도 다른 규칙을 쓰면 표를 잘못된 칸에서 읽거나 채점이 무의미해진다.
+    통합 세그먼트는 responder 를 -1(무관)로 접는다 — 상위 셀 (-1, -1) 과는 구분된다.
+    """
+    if seg in COLLAPSE_RESPONDER_SEGS:
+        return (seg, age_bucket, reuse, -1)
+    return (seg, age_bucket, reuse, responder)
+
 _DEFAULT_RATES: dict[tuple[str, str, int, int], tuple[float, int]] = {
-    ("reg2", "lt6h", 0, 0): (5.6, 3056),
-    ("reg2", "lt6h", 0, 1): (12.4, 1366),
-    ("reg2", "lt6h", 1, 0): (13.9, 2619),
-    ("reg2", "lt6h", 1, 1): (23.2, 1691),
-    ("reg2", "6to48h", 0, 0): (2.4, 1751),
-    ("reg2", "6to48h", 0, 1): (7.1, 2210),
-    ("reg2", "6to48h", 1, 0): (7.2, 1332),
-    ("reg2", "6to48h", 1, 1): (12.9, 2243),
-    ("reg2", "gte48h", 0, 0): (0.2, 1013),
-    ("reg2", "gte48h", 0, 1): (0.2, 2207),
-    ("reg2", "gte48h", 1, 0): (1.0, 711),
-    ("reg2", "gte48h", 1, 1): (0.9, 1935),
-    ("reg3", "lt6h", 0, 0): (12.3, 616),
-    ("reg3", "lt6h", 0, 1): (21.8, 230),
-    ("reg3", "lt6h", 1, 0): (25.9, 1048),
-    ("reg3", "lt6h", 1, 1): (35.5, 508),
-    ("reg3", "6to48h", 0, 0): (7.2, 364),
-    ("reg3", "6to48h", 0, 1): (12.1, 337),
-    ("reg3", "6to48h", 1, 0): (15.0, 533),
-    ("reg3", "6to48h", 1, 1): (22.9, 583),
-    ("reg3", "gte48h", 0, 0): (2.1, 208),
-    ("reg3", "gte48h", 0, 1): (1.9, 298),
-    ("reg3", "gte48h", 1, 0): (6.1, 255),
-    ("reg3", "gte48h", 1, 1): (2.3, 411),
-    ("urgent", "lt6h", 0, 0): (27.6, 63),
-    ("urgent", "lt6h", 0, 1): (47.1, 78),
-    ("urgent", "lt6h", 1, 0): (24.6, 179),
-    ("urgent", "lt6h", 1, 1): (49.9, 399),
-    ("urgent", "6to48h", 0, 0): (25.8, 13),
-    ("urgent", "6to48h", 0, 1): (27.6, 27),
-    ("urgent", "6to48h", 1, 0): (26.5, 30),
-    ("urgent", "6to48h", 1, 1): (35.9, 104),
-    ("urgent", "gte48h", 0, 0): (23.7, 4),
-    ("urgent", "gte48h", 0, 1): (24.6, 6),
-    ("urgent", "gte48h", 1, 0): (26.4, 6),
-    ("urgent", "gte48h", 1, 1): (27.0, 27),
-    ("reg2", "6to48h", -1, -1): (7.8, 7536),
-    ("reg2", "gte48h", -1, -1): (0.5, 5866),
-    ("reg2", "lt6h", -1, -1): (12.6, 8732),
-    ("reg3", "6to48h", -1, -1): (15.3, 1817),
-    ("reg3", "gte48h", -1, -1): (3.0, 1172),
-    ("reg3", "lt6h", -1, -1): (24.0, 2402),
-    ("urgent", "6to48h", -1, -1): (30.5, 174),
-    ("urgent", "gte48h", -1, -1): (25.6, 43),
-    ("urgent", "lt6h", -1, -1): (40.5, 719),
+    ("reg2", "lt6h", -1, -1): (14.7, 2530),
+    ("reg2", "lt6h", 0, 0): (8.0, 721),
+    ("reg2", "lt6h", 0, 1): (13.2, 359),
+    ("reg2", "lt6h", 1, 0): (17.1, 835),
+    ("reg2", "lt6h", 1, 1): (20.1, 615),
+    ("reg2", "6to48h", -1, -1): (8.4, 2106),
+    ("reg2", "6to48h", 0, 0): (4.5, 376),
+    ("reg2", "6to48h", 0, 1): (6.0, 569),
+    ("reg2", "6to48h", 1, 0): (11.2, 361),
+    ("reg2", "6to48h", 1, 1): (10.8, 800),
+    ("reg2", "gte48h", -1, -1): (1.4, 1583),
+    ("reg2", "gte48h", 0, 0): (0.8, 195),
+    ("reg2", "gte48h", 0, 1): (1.0, 552),
+    ("reg2", "gte48h", 1, 0): (1.6, 170),
+    ("reg2", "gte48h", 1, 1): (2.0, 666),
+    ("reg3", "lt6h", -1, -1): (26.3, 885),
+    ("reg3", "lt6h", 0, -1): (18.9, 246),
+    ("reg3", "lt6h", 1, -1): (29.8, 639),
+    ("reg3", "6to48h", -1, -1): (16.2, 647),
+    ("reg3", "6to48h", 0, -1): (11.9, 195),
+    ("reg3", "6to48h", 1, -1): (18.5, 452),
+    ("reg3", "gte48h", -1, -1): (6.0, 401),
+    ("reg3", "gte48h", 0, -1): (5.0, 138),
+    ("reg3", "gte48h", 1, -1): (6.6, 263),
+    ("urgent", "lt6h", -1, -1): (34.3, 239),
+    ("urgent", "lt6h", 0, -1): (30.3, 53),
+    ("urgent", "lt6h", 1, -1): (36.5, 186),
+    ("urgent", "6to48h", -1, -1): (18.5, 54),
+    ("urgent", "6to48h", 0, -1): (18.5, 11),
+    ("urgent", "6to48h", 1, -1): (19.2, 43),
+    ("urgent", "gte48h", -1, -1): (13.3, 15),
+    ("urgent", "gte48h", 0, -1): (13.3, 3),
+    ("urgent", "gte48h", 1, -1): (13.3, 12),
 }
 
 
@@ -174,11 +182,19 @@ def build_cells(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     표본이 MIN_CELL_N 미만이면 상위 셀 값을 그대로 쓴다(rate 만; n·matched 는 원값 보존).
     """
     parent: dict[tuple[str, str], list[int]] = {}
+    leaf: dict[tuple[str, str, int, int], list[int]] = {}
     for r in raw:
-        key = (r["seg"], r["age_bucket"])
-        acc = parent.setdefault(key, [0, 0])
-        acc[0] += int(r["n"])
-        acc[1] += int(r["matched"])
+        n, m = int(r["n"]), int(r["matched"])
+        if n <= 0:
+            continue
+        acc = parent.setdefault((r["seg"], r["age_bucket"]), [0, 0])
+        acc[0] += n
+        acc[1] += m
+        # 통합 세그먼트는 여러 raw 행이 한 잎 셀로 합쳐진다
+        k = cell_key(r["seg"], r["age_bucket"], int(r["reuse"]), int(r["responder"]))
+        lacc = leaf.setdefault(k, [0, 0])
+        lacc[0] += n
+        lacc[1] += m
 
     out: list[dict[str, Any]] = []
     for key, (pn, pm) in parent.items():
@@ -187,16 +203,13 @@ def build_cells(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rate = round(100.0 * pm / pn, 2)
         out.append({"seg": key[0], "age_bucket": key[1], "reuse": -1, "responder": -1,
                     "n": pn, "matched": pm, "rate": rate, "raw_rate": rate})
-    for r in raw:
-        n, m = int(r["n"]), int(r["matched"])
-        if n <= 0:
-            continue
-        pn, pm = parent[(r["seg"], r["age_bucket"])]
+    for (seg, bucket, reuse, responder), (n, m) in leaf.items():
+        pn, pm = parent[(seg, bucket)]
         p_rate = 100.0 * pm / pn
         raw_rate = 100.0 * m / n
         rate = p_rate if n < MIN_CELL_N else 100.0 * (m + SHRINK_K * p_rate / 100.0) / (n + SHRINK_K)
-        out.append({"seg": r["seg"], "age_bucket": r["age_bucket"],
-                    "reuse": int(r["reuse"]), "responder": int(r["responder"]),
+        out.append({"seg": seg, "age_bucket": bucket,
+                    "reuse": reuse, "responder": responder,
                     "n": n, "matched": m,
                     "rate": round(rate, 2), "raw_rate": round(raw_rate, 2)})
     return out
@@ -208,7 +221,7 @@ def lookup(table: dict[tuple[str, str, int, int], tuple[float, int]],
 
     감시가 서빙과 다른 규칙으로 조회하면 채점이 무의미해지므로 한 곳에 둔다.
     """
-    hit = table.get((seg, bucket, reuse, responder))
+    hit = table.get(cell_key(seg, bucket, reuse, responder))
     if hit:
         return hit[0], True
     hit = table.get((seg, bucket, -1, -1))
@@ -239,10 +252,16 @@ def score_table(fit_cells: list[dict[str, Any]], test_raw: list[dict[str, Any]],
             continue
         pred, is_leaf = got
         actual = 100.0 * m / n
+        # 채점 셀 자체의 95% 표본오차 반폭. 오차가 이 안이면 모델 탓인지 알 수 없다.
+        # 이걸 같이 안 보여주면 n 이 작은 셀의 '큰 오차'를 회귀로 오독하게 된다.
+        q = actual / 100.0
+        noise = 1.96 * math.sqrt(max(q * (1.0 - q), 1e-9) / n) * 100.0
+        err = abs(pred - actual)
         rows.append({"seg": t["seg"], "age_bucket": t["age_bucket"],
                      "reuse": int(t["reuse"]), "responder": int(t["responder"]),
                      "n": n, "predicted": round(pred, 2), "actual": round(actual, 2),
-                     "err": round(abs(pred - actual), 2), "leaf": is_leaf})
+                     "err": round(err, 2), "noise": round(noise, 2),
+                     "signal": err > noise, "leaf": is_leaf})
 
     def _mae(rs: list[dict[str, Any]]) -> tuple[float | None, int]:
         tot = sum(r["n"] for r in rs)
@@ -259,7 +278,8 @@ def score_table(fit_cells: list[dict[str, Any]], test_raw: list[dict[str, Any]],
             by_seg[seg] = {"mae": v, "n": sn, "cells": len(sub)}
     rows.sort(key=lambda r: -r["err"])
     return {"rows": rows, "mae": mae, "n": total_n, "cells": len(rows),
-            "by_seg": by_seg, "skipped": skipped}
+            "by_seg": by_seg, "skipped": skipped,
+            "signal_cells": sum(1 for r in rows if r["signal"])}
 
 
 _store: ProbRateStore | None = None

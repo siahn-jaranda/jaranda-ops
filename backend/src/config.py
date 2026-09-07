@@ -84,13 +84,19 @@ class Settings(BaseSettings):
     # 학습창 90일 — 2026-07-02 자동 디스패치 승격 같은 개입을 몇 주 안에 흡수해야 한다.
     # 정착 30일 — 결과가 여물 시간을 안 주면 최근 건이 전부 미매칭으로 잡혀 비율이 깎인다.
     prob_rate_window_days: int = 90
-    prob_rate_settle_days: int = 30
+    # 정착 10일 — 매칭 실측이 99.5%가 3일 내, 100%가 7일 내 확정된다(2,200건 기준).
+    # 나이 5~12일 코호트 매칭률 15.8% vs 46~60일 17.8% 로 이미 같은 수준이다.
+    # 30일은 20일을 그냥 버리는 것이고, 그만큼 개입(예: 자동 디스패치 확대) 추종이 늦어진다.
+    prob_rate_settle_days: int = 10
     # 회귀 감시 — 월 1회 백테스트. 과거 구간으로 표를 재현해 그 다음 구간 실제값으로 채점한다.
     # 학습 [now-150d, now-90d] → 채점 [now-90d, now-30d](= 현행 표와 같은 구간).
     # "60일 전 방식으로 만든 표가 지금 얼마나 틀렸나" = 오늘 표의 향후 오차 추정치.
     prob_rate_audit_lag_days: int = 60          # 학습 구간을 이만큼 더 과거로 민다
     prob_rate_audit_mae_threshold: float = 5.0  # 가중 MAE 가 이걸 넘으면 경보
-    prob_rate_audit_min_cell_n: int = 30        # 채점 표본이 이보다 얇은 셀은 제외
+    # 채점 표본 150건 — 이보다 얇으면 셀 자체의 95% 표본오차가 ±10%p 안팎이라
+    # 모델 오차와 측정 노이즈를 구분할 수 없다. 30으로 뒀을 때 "15%p 오차"로 보고되던
+    # 셀들이 전부 n=30~66 짜리였고, 실제로는 노이즈 대역 안이었다.
+    prob_rate_audit_min_cell_n: int = 150
     prob_rate_audit_slack_target: str = "C01S3R69F26"
 
     # 배포 전/후 비교 일일 리포트 (Cloud Scheduler → Slack n8n 릴레이)

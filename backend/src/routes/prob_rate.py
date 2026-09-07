@@ -84,15 +84,18 @@ def _audit_text(res: dict[str, Any], fit: tuple[int, int], test: tuple[int, int]
     head = ("🚨 *matching-ops 매칭확률 회귀 감지*" if breached
             else "✅ *matching-ops 매칭확률 회귀 감시 — 정상*")
 
-    lines = ["%-24s %7s %7s %8s %5s" % ("셀", "예측", "실제", "오차", "n"), "-" * 56]
+    lines = ["%-22s %7s %7s %8s %8s %5s"
+             % ("셀", "예측", "실제", "오차", "노이즈±", "n"), "-" * 62]
     for r in res["rows"][:12]:
         tag = "%s/%s/%s" % (r["seg"], r["age_bucket"],
                             _CELL_LABEL.get((r["reuse"], r["responder"]), "?"))
-        flag = "" if r["err"] <= thr else " ⚠"
-        lines.append("%-24s %6.1f%% %6.1f%% %6.1f%%p %5d%s"
-                     % (tag[:24], r["predicted"], r["actual"], r["err"], r["n"], flag))
+        # 오차가 그 셀의 표본오차 안이면 모델 탓으로 볼 수 없다
+        flag = " ⚠" if (r["err"] > thr and r["signal"]) else ("" if r["signal"] else " ~")
+        lines.append("%-22s %6.1f%% %6.1f%% %6.1f%%p %6.1f%%p %5d%s"
+                     % (tag[:22], r["predicted"], r["actual"], r["err"],
+                        r["noise"], r["n"], flag))
 
-    over = [r for r in res["rows"] if r["err"] > thr]
+    over = [r for r in res["rows"] if r["err"] > thr and r["signal"]]
     by_seg = " · ".join("%s %s%%p(n=%d)" % (k, v["mae"], v["n"])
                         for k, v in res["by_seg"].items())
 
@@ -101,17 +104,19 @@ def _audit_text(res: dict[str, Any], fit: tuple[int, int], test: tuple[int, int]
         "_백테스트 — 학습 %d~%d일 전 구간으로 표를 재현해, 채점 %d~%d일 전 구간 실제값과 대조_\n"
         "*가중 MAE %s%%p* (임계 %s%%p) · 셀 %d개 · 표본 %s건\n"
         "세그먼트별 — %s\n"
-        "임계 초과 셀 %d개 / 표본 부족 제외 %d개\n\n"
+        "임계 초과 셀 %d개(노이즈 제외) / 노이즈 초과 %d개 / 표본 부족 제외 %d개\n\n"
         "```\n%s\n```"
     ) % (head, fit[0], fit[1], test[0], test[1], res["mae"], thr,
-         res["cells"], format(res["n"], ","), by_seg, len(over), res["skipped"],
+         res["cells"], format(res["n"], ","), by_seg,
+         len(over), res["signal_cells"], res["skipped"],
          "\n".join(lines))
 
     if breached:
         body += ("\n_표가 최근 실제와 벌어졌습니다. 셀 정의나 학습창(현행 %d일)을 재검토하세요._"
                  % settings.prob_rate_window_days)
     else:
-        body += "\n_오차 상위 12셀만 표시. 전체 표는 `GET /api/prob-rate`._"
+        body += ("\n_오차 상위 12셀. `~` = 그 셀의 95%% 표본오차(노이즈±) 안이라"
+                 " 모델 오차로 볼 수 없음. 전체 표는 `GET /api/prob-rate`._")
     return body
 
 
@@ -146,7 +151,10 @@ async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
     if res["mae"] is None:
         return {"status": "skipped", "reason": "no_scorable_cells", "skipped": res["skipped"]}
 
-    breached = res["mae"] > settings.prob_rate_audit_mae_threshold
+    # MAE 가 임계를 넘고 **그 원인이 노이즈가 아닌** 셀이 있을 때만 경보.
+    # 표본이 얇아 흔들린 것까지 경보하면 매달 늑대가 나타난다.
+    breached = (res["mae"] > settings.prob_rate_audit_mae_threshold
+                and res["signal_cells"] > 0)
     body = _audit_text(res, fit_span, test_span, breached)
 
     sent = False
@@ -169,5 +177,6 @@ async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
                 res["mae"], breached, res["cells"], res["n"], sent)
     return {"status": "ok", "mae": res["mae"], "breached": breached, "sent": sent,
             "cells": res["cells"], "n": res["n"], "by_seg": res["by_seg"],
-            "skipped": res["skipped"], "fit_span": fit_span, "test_span": test_span,
+            "skipped": res["skipped"], "signal_cells": res["signal_cells"],
+            "fit_span": fit_span, "test_span": test_span,
             "rows": res["rows"], "text": body}

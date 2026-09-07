@@ -22,6 +22,7 @@ from src.handler_store import get_handler_store, handler_store_available
 from src.memo_store import get_memo_store, memo_store_available
 from src.prob_rate_store import (
     age_bucket as prob_age_bucket,
+    cell_key as prob_cell_key,
     get_prob_rate_store,
     prob_rate_available,
     segment as prob_segment,
@@ -364,7 +365,8 @@ def _compute_prob(
         responder = 1 if applied_count > 0 else 0
         keys: list[tuple[str, str, int, int]] = []
         if is_new is not None:
-            keys.append((seg, age_bucket, 0 if is_new else 1, responder))
+            # cell_key 를 거쳐야 한다 — reg3·urgent 는 응답유무를 접은 키를 쓴다
+            keys.append(prob_cell_key(seg, age_bucket, 0 if is_new else 1, responder))
         keys.append((seg, age_bucket, -1, -1))
         for key in keys:
             hit = rates.get(key)
