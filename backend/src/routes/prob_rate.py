@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -125,9 +126,12 @@ async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
     """회귀 감시 백테스트. Cloud Scheduler 가 월 1회 호출한다.
 
     현행 표를 그대로 채점하면 학습 구간과 채점 구간이 같아 오차가 0에 가깝게 나온다.
-    그래서 학습 구간을 lag 만큼 과거로 밀어 **그때의 표**를 재현하고, 그 다음 구간
-    실제값으로 채점한다 — "60일 전 방식으로 만든 표가 지금 얼마나 틀렸나".
-    이게 오늘 표의 향후 오차 추정치다.
+    그래서 **채점 구간 직전**의 window 길이 구간으로 표를 다시 만들어(=그 시점의 표를
+    재현) 채점 구간 실제값과 대조한다 — "한 달 전 방식으로 만든 표가 지금 얼마나
+    틀렸나". 이게 오늘 표의 향후 오차 추정치다.
+
+    두 구간은 반드시 **겹치지 않아야** 한다. 겹치면 학습에 쓴 데이터로 채점하는 꼴이라
+    오차가 실제보다 낮게 나온다. settle·window 에서 구간을 유도해 구조적으로 막는다.
 
     경보 여부와 무관하게 항상 보낸다. 침묵과 정상이 구분되지 않으면 감시가 아니다
     (2026-09-04 LLM 연속 실패를 아무도 모른 채 지나간 사고와 같은 실패 양식).
@@ -135,14 +139,18 @@ async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
     if not prob_rate_available():
         return {"status": "skipped", "reason": "MATCHING_OPS_DB_URL 미설정"}
 
-    lag = settings.prob_rate_audit_lag_days
     win, settle = settings.prob_rate_window_days, settings.prob_rate_settle_days
-    fit_span = (win + lag, settle + lag)
-    test_span = (win, settle)
+    t = settings.prob_rate_audit_test_days
+    # 채점은 최신 정착 구간, 학습은 그 직전 window 길이 구간. 붙어 있을 뿐 겹치지 않는다.
+    test_span = (settle + t, settle)
+    fit_span = (settle + t + win, settle + t)
 
     replica = get_replica()
-    fit_raw = await replica.prob_rate_cohort(start_days_ago=fit_span[0], end_days_ago=fit_span[1])
-    test_raw = await replica.prob_rate_cohort(start_days_ago=test_span[0], end_days_ago=test_span[1])
+    # 두 코호트는 서로 독립이라 동시에 뽑는다 — 순차로 돌리면 요청 타임아웃(900s)에 걸린다.
+    fit_raw, test_raw = await asyncio.gather(
+        replica.prob_rate_cohort(start_days_ago=fit_span[0], end_days_ago=fit_span[1]),
+        replica.prob_rate_cohort(start_days_ago=test_span[0], end_days_ago=test_span[1]),
+    )
     if not fit_raw or not test_raw:
         return {"status": "skipped", "reason": "empty_cohort",
                 "fit_cells": len(fit_raw), "test_cells": len(test_raw)}
