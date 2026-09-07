@@ -451,8 +451,14 @@ class JarandaReplica:
         "지금 열려 있는 신청서가 앞으로 매칭될 확률"이라는 질문에 답하지 못한다.
 
         성능: 신청서당 팩트를 derived table 에서 **한 번만** 만들고 구간 3개를 교차
-        조인한다. 구간마다 상관 서브쿼리를 다시 도는 형태로 짜면 평가 횟수가 3배가 되어
-        90일 코호트에서도 분 단위로 늘어진다.
+        조인한다. 구간마다 상관 서브쿼리를 다시 도는 형태로 짜면 평가 횟수가 3배가 된다.
+
+        재이용·응답 신호는 상관 서브쿼리가 아니라 **미리 집계한 derived table 조인**이다.
+        상관 서브쿼리 판은 코호트가 80일로 늘어나자 Cloud Run 300s 요청 타임아웃을
+        넘겨 504 가 났다(2026-09-07, 정착 30→10일 변경 직후). 신청서 8천 건 × 2개
+        서브쿼리 = 1.6만 회 평가가 집계 2회 + 조인으로 바뀐다.
+        recommendation_teachers 는 rt_days 로 잘라 derived table 을 작게 유지한다 —
+        rt 행은 신청서 생성 시각 이후에 생기므로 코호트 시작보다 앞선 행은 필요 없다.
         """
         query = text(
             """
@@ -462,22 +468,33 @@ class JarandaReplica:
                    COUNT(*) AS n,
                    SUM(f.m) AS matched
               FROM (
-                    SELECT r.sid, r.created_at, r.confirmed_at, r.cancelled_at,
+                    SELECT r.created_at, r.confirmed_at, r.cancelled_at,
                            CASE WHEN r.is_urgent = 1 THEN 'urgent'
                                 WHEN r.regularity = 3 THEN 'reg3'
                                 ELSE 'reg2' END AS seg,
                            (r.status IN (40, 90)) AS m,
-                           (SELECT COUNT(*) FROM recommendation q
-                             WHERE q.parent_account_sid = r.parent_account_sid
-                               AND q.created_at < r.created_at
-                               AND q.status IN (40, 90)) > 0 AS reuse,
-                           (SELECT MIN(COALESCE(
-                                     NULLIF(t.last_responded_at, '0000-00-00 00:00:00'),
-                                     t._created_at))
-                              FROM recommendation_teachers t
-                             WHERE t.recommendation_sid = r.sid
-                               AND (t.applied = 1 OR t.accepted = 1)) AS first_resp
+                           (ph.first_matched_at IS NOT NULL
+                            AND ph.first_matched_at < r.created_at) AS reuse,
+                           rt.first_resp
                       FROM recommendation r
+                      LEFT JOIN (
+                            SELECT p.parent_account_sid,
+                                   MIN(p.created_at) AS first_matched_at
+                              FROM recommendation p
+                             WHERE p.status IN (40, 90)
+                             GROUP BY p.parent_account_sid
+                           ) ph ON ph.parent_account_sid = r.parent_account_sid
+                      LEFT JOIN (
+                            SELECT t.recommendation_sid,
+                                   MIN(COALESCE(
+                                     NULLIF(t.last_responded_at, '0000-00-00 00:00:00'),
+                                     t._created_at)) AS first_resp
+                              FROM recommendation_teachers t
+                             WHERE (t.applied = 1 OR t.accepted = 1)
+                               AND t._created_at >=
+                                   DATE_SUB(NOW(), INTERVAL :rt_days DAY)
+                             GROUP BY t.recommendation_sid
+                           ) rt ON rt.recommendation_sid = r.sid
                      WHERE r.created_at >= DATE_SUB(NOW(), INTERVAL :start_days DAY)
                        AND r.created_at <= DATE_SUB(NOW(), INTERVAL :end_days DAY)
                    ) f
@@ -495,7 +512,8 @@ class JarandaReplica:
         )
         async with self._session_factory() as session:
             rows = (await session.execute(
-                query, {"start_days": start_days_ago, "end_days": end_days_ago}
+                query, {"start_days": start_days_ago, "end_days": end_days_ago,
+                        "rt_days": start_days_ago + 10}
             )).fetchall()
         return [
             {"seg": r[0], "age_bucket": r[1], "reuse": int(r[2]),
