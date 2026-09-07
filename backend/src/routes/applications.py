@@ -315,24 +315,37 @@ def _request_chips(rec: dict[str, Any], subjects: list[dict[str, Any]] | None = 
 
 
 def _compute_prob(
+    status_code: Any,
     confirmed: Any,
     cancelled: Any,
     applied_count: int,
     requested_count: int,
-    is_new: bool,
+    is_new: bool | None,
     timer_min: int | None,
     is_urgent: bool,
 ) -> dict[str, Any]:
     """매칭 확률을 dict로 반환. {value: 0~100, source: heuristic|actual}.
 
+    종결 상태는 status 가 정답이다. 타임스탬프로 판정하면 안 된다 —
+    확정 후 파기된 건은 confirmed_at 과 cancelled_at 이 **둘 다** 실값이라
+    검사 순서에 따라 답이 갈린다(2026-09-07 실측: 정기·일반 225건이 여기 해당,
+    실제 매칭률 6.67% 인데 confirmed 를 먼저 봐서 100% 로 표시되고 있었다).
+    status 로 가르면 40·90 → 100%(실측 1,497건 전부), 99 → 0%(실측 8,748건 전부)로 정확하다.
+
     LLM 예측 미구현 — 휴리스틱: base 30 + 지원 응답률(최대 +45) + 재이용(+10)
     + 지명·요청 모수(최대 +5) + 마감 여유/임박(±15) + 긴급(-10).
-    confirmed/cancelled 시점 정보가 있으면 source=actual로 마킹.
+    ⚠️ 이 휴리스틱은 실측 +48.6%p 과대평가이고 순위도 역전된다. 비율표 모델로 교체 예정
+    (옵시디언 `수동매칭 대시보드/matching-ops 예상 매칭확률 캘리브레이션.md`).
     """
-    if _is_real_ts(confirmed):
+    if status_code in (40, 90):
         return {"value": 100, "source": "actual"}
+    if status_code == 99:
+        return {"value": 0, "source": "actual"}
+    # 종결 status 가 아직 안 붙은 과도 상태 — 취소가 확정을 이긴다
     if _is_real_ts(cancelled):
         return {"value": 0, "source": "actual"}
+    if _is_real_ts(confirmed):
+        return {"value": 100, "source": "actual"}
 
     score = 30
     if applied_count >= 1:
@@ -344,7 +357,9 @@ def _compute_prob(
     if requested_count >= 3:
         score += 5
 
-    if not is_new:
+    # 확인된 재이용만 가산. is_new=None 은 부모 이력 조회 실패(=모름)이므로 중립.
+    # 예전엔 None 이 False 로 접혀 '재이용' 취급되어 모름에 유리한 점수가 붙었다.
+    if is_new is False:
         score += 10
 
     if timer_min is not None:
@@ -725,10 +740,10 @@ def _to_row(
         "confirmed": confirmed.strftime("%H:%M") if _is_real_ts(confirmed) else "—",
         # prob: { value: 0~100, source: heuristic|actual }
         "prob": _compute_prob(
-            confirmed, cancelled,
+            status_code, confirmed, cancelled,
             int(rec.get("applied_count") or 0),
             int(rec.get("requested_count") or 0),
-            bool(is_new) if is_new is not None else False,
+            is_new,
             timer,
             bool(rec.get("is_urgent")),
         ),
