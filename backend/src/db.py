@@ -434,7 +434,8 @@ class JarandaReplica:
             return {int(row._mapping["id"]): row._mapping["name"] for row in result}
 
     async def prob_rate_cohort(
-        self, *, start_days_ago: int = 90, end_days_ago: int = 30
+        self, *, start_days_ago: int = 90, end_days_ago: int = 30,
+        split_days_ago: int | None = None,
     ) -> list[dict]:
         """예상 매칭확률 비율표용 정착 코호트 집계.
 
@@ -459,16 +460,26 @@ class JarandaReplica:
         서브쿼리 = 1.6만 회 평가가 집계 2회 + 조인으로 바뀐다.
         recommendation_teachers 는 rt_days 로 잘라 derived table 을 작게 유지한다 —
         rt 행은 신청서 생성 시각 이후에 생기므로 코호트 시작보다 앞선 행은 필요 없다.
+
+        split_days_ago — 주면 결과에 period('older'|'newer') 가 붙는다.
+        회귀 감시는 학습·채점 구간이 서로 **붙어 있으므로**, 두 번 호출하는 대신
+        합친 구간을 한 번 뽑아 나눈다. 부모 이력 derived table 이 16만 행을 훑어
+        4.9만 행을 만드는데 호출마다 다시 만들어져, 두 번 돌리면 요청 타임아웃에 걸린다.
         """
         query = text(
             """
             SELECT f.seg, b.bucket AS age_bucket, f.reuse,
                    (f.first_resp IS NOT NULL
                     AND f.first_resp <= DATE_ADD(f.created_at, INTERVAL b.h HOUR)) AS responder,
+                   f.period,
                    COUNT(*) AS n,
                    SUM(f.m) AS matched
               FROM (
                     SELECT r.created_at, r.confirmed_at, r.cancelled_at,
+                           CASE WHEN :split_days IS NULL THEN 'all'
+                                WHEN r.created_at <
+                                     DATE_SUB(NOW(), INTERVAL :split_days DAY)
+                                THEN 'older' ELSE 'newer' END AS period,
                            CASE WHEN r.is_urgent = 1 THEN 'urgent'
                                 WHEN r.regularity = 3 THEN 'reg3'
                                 ELSE 'reg2' END AS seg,
@@ -507,17 +518,19 @@ class JarandaReplica:
                     OR f.confirmed_at > DATE_ADD(f.created_at, INTERVAL b.h HOUR))
                AND (f.cancelled_at <= '2000-01-01'
                     OR f.cancelled_at > DATE_ADD(f.created_at, INTERVAL b.h HOUR))
-             GROUP BY f.seg, b.bucket, f.reuse, responder
+             GROUP BY f.seg, b.bucket, f.reuse, responder, f.period
             """
         )
         async with self._session_factory() as session:
             rows = (await session.execute(
                 query, {"start_days": start_days_ago, "end_days": end_days_ago,
-                        "rt_days": start_days_ago + 10}
+                        "rt_days": start_days_ago + 10,
+                        "split_days": split_days_ago}
             )).fetchall()
         return [
             {"seg": r[0], "age_bucket": r[1], "reuse": int(r[2]),
-             "responder": int(r[3]), "n": int(r[4]), "matched": int(r[5] or 0)}
+             "responder": int(r[3]), "period": r[4],
+             "n": int(r[5]), "matched": int(r[6] or 0)}
             for r in rows
         ]
 

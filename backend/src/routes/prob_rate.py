@@ -13,7 +13,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -145,12 +144,15 @@ async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
     test_span = (settle + t, settle)
     fit_span = (settle + t + win, settle + t)
 
-    replica = get_replica()
-    # 두 코호트는 서로 독립이라 동시에 뽑는다 — 순차로 돌리면 요청 타임아웃(900s)에 걸린다.
-    fit_raw, test_raw = await asyncio.gather(
-        replica.prob_rate_cohort(start_days_ago=fit_span[0], end_days_ago=fit_span[1]),
-        replica.prob_rate_cohort(start_days_ago=test_span[0], end_days_ago=test_span[1]),
+    # 두 구간은 붙어 있으므로 합쳐서 **한 번만** 뽑고 period 로 나눈다.
+    # 따로 두 번 부르면 부모 이력 derived table(16만 행 스캔 → 4.9만 행)이 두 번
+    # 만들어져 요청 타임아웃을 넘긴다. 동시 실행(gather)으로도 해결되지 않았다.
+    rows = await get_replica().prob_rate_cohort(
+        start_days_ago=fit_span[0], end_days_ago=test_span[1],
+        split_days_ago=test_span[0],
     )
+    fit_raw = [r for r in rows if r["period"] == "older"]
+    test_raw = [r for r in rows if r["period"] == "newer"]
     if not fit_raw or not test_raw:
         return {"status": "skipped", "reason": "empty_cohort",
                 "fit_cells": len(fit_raw), "test_cells": len(test_raw)}
