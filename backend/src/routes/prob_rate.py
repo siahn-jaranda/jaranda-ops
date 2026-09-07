@@ -4,6 +4,7 @@
   Cloud Scheduler 가 매일 04:20 KST 호출한다. 인증은 auto_dispatch 와 동일
   (X-Trigger-Secret 또는 세션).
 - POST /api/prob-rate/audit — 회귀 감시 백테스트. 월 1회.
+  슬랙 발송은 body {"notify": true} 일 때만 — 수동 호출이 팀 채널을 울리지 않게.
 - GET  /api/prob-rate — 현재 표. 플래너·운영자가 "이 확률의 근거 표본이 몇 건인지"를
   확인할 수 있어야 해서 n·raw_rate 를 같이 노출한다.
 
@@ -17,7 +18,7 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 
 from src.config import settings
 from src.db import get_replica
@@ -127,7 +128,10 @@ def _audit_text(res: dict[str, Any], fit: tuple[int, int], test: tuple[int, int]
 
 
 @router.post("/audit")
-async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
+async def audit(
+    body: dict[str, Any] = Body(default_factory=dict),
+    user: dict = Depends(trigger_auth),
+) -> dict[str, Any]:
     """회귀 감시 백테스트. Cloud Scheduler 가 월 1회 호출한다.
 
     현행 표를 그대로 채점하면 학습 구간과 채점 구간이 같아 오차가 0에 가깝게 나온다.
@@ -140,6 +144,10 @@ async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
 
     경보 여부와 무관하게 항상 보낸다. 침묵과 정상이 구분되지 않으면 감시가 아니다
     (2026-09-04 LLM 연속 실패를 아무도 모른 채 지나간 사고와 같은 실패 양식).
+
+    단 슬랙 발송은 body 에 notify=true 를 준 호출에서만 한다. 기본이 발송이면
+    개발·검증용 수동 호출이 그대로 팀 채널에 나간다 — 실제로 2026-09-07 오차를
+    잡는 동안 #1-팀-운영 에 4번 나갔다. 스케줄러만 notify=true 를 보낸다.
     """
     if not prob_rate_available():
         return {"status": "skipped", "reason": "MATCHING_OPS_DB_URL 미설정"}
@@ -174,8 +182,9 @@ async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
     body = _audit_text(res, fit_span, test_span, breached)
 
     sent = False
+    notify = bool(body.get("notify"))
     url = settings.ab_report_webhook.strip()
-    if url:
+    if notify and url:
         payload: dict[str, Any] = {"text": body}
         target = settings.prob_rate_audit_slack_target.strip()
         if target:
@@ -189,8 +198,8 @@ async def audit(user: dict = Depends(trigger_auth)) -> dict[str, Any]:
         except Exception:
             logger.exception("prob_rate audit webhook post failed")
 
-    logger.info("prob_rate audit mae=%s breached=%s cells=%d n=%d sent=%s",
-                res["mae"], breached, res["cells"], res["n"], sent)
+    logger.info("prob_rate audit mae=%s breached=%s cells=%d n=%d notify=%s sent=%s",
+                res["mae"], breached, res["cells"], res["n"], notify, sent)
     return {"status": "ok", "mae": res["mae"], "breached": breached, "sent": sent,
             "cells": res["cells"], "n": res["n"], "by_seg": res["by_seg"],
             "skipped": res["skipped"], "signal_cells": res["signal_cells"],
