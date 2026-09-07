@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends
 from src.config import settings
 from src.db import get_replica
 from src.prob_rate_store import (
+    SEGS,
     build_cells,
     get_prob_rate_store,
     prob_rate_available,
@@ -98,6 +99,11 @@ def _audit_text(res: dict[str, Any], fit: tuple[int, int], test: tuple[int, int]
     over = [r for r in res["rows"] if r["err"] > thr and r["signal"]]
     by_seg = " · ".join("%s %s%%p(n=%d)" % (k, v["mae"], v["n"])
                         for k, v in res["by_seg"].items())
+    # 채점 셀이 하나도 없는 세그먼트를 침묵시키지 않는다 — 감시 공백은 드러나야 한다
+    uncovered = [g for g in SEGS if g not in res["by_seg"]]
+    if uncovered:
+        by_seg += "\n⚠️ *미채점 세그먼트 — %s* (채점 표본 %d건 미만이라 이번 회차 감시 밖)" % (
+            ", ".join(uncovered), settings.prob_rate_audit_min_cell_n)
 
     body = (
         "%s\n"
