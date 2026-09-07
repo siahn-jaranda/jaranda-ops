@@ -3,6 +3,7 @@
 메뉴 2개. 우선순위는 필터가 아니라 **배경 정렬**이다 — 플래너는 위에서부터 처리한다.
 
 - recommended — 선생님 추천 상태(20)가 된 지 48시간 지난 건. 오래 방치된 순.
+  경과 기준은 created_at — suggested_at 은 추천할 때마다 갱신돼 못 쓴다(db.py 근거 참고).
 - intake — 접수안내(10) 중 예상 매칭확률 **상위 30% / 하위 30% 분위**.
   상위는 밀어주면 닫히는 건, 하위는 구조적 개입이 필요한 건이라 성격이 다르다.
 
@@ -88,7 +89,7 @@ async def list_manual_ops(
         groups = [{
             "key": "stale",
             "label": f"{stale_hours}시간 경과",
-            "hint": "선생님 추천 후 부모님 확정이 없는 건. 오래된 순.",
+            "hint": "선생님을 추천했는데 부모님 확정이 없는 건. 오래된 순.",
             "count": len(rows),
         }]
         logger.info("manual_ops menu=recommended stale_h=%d rows=%d", stale_hours, len(rows))

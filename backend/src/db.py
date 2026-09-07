@@ -439,7 +439,13 @@ class JarandaReplica:
         """[수동관리 신청서] 두 메뉴의 대상 sid.
 
         - recommended — 선생님 추천 상태(20)가 된 지 stale_hours 경과.
-          경과 기준은 suggested_at(선생님 추천 발송 시각). 제로데이트는 제외한다.
+          🚨 경과 기준은 created_at 이다. suggested_at 은 추천이 나갈 때마다 **갱신**되어
+          "상태에 진입한 시점"을 못 나타낸다(2026-09-07 실측: status=20 인 21건 전부
+          suggested_at 이 최근 2일 내인데, 그중 15건은 접수 48시간 초과).
+          같은 실측에서 첫 추천 시각(min recommendation_teachers._created_at where
+          suggested=1)이 **21건 전부 created_at 과 동일**했다 — 플랫폼이 접수 즉시
+          선생님을 붙이므로 접수 시각이 곧 추천 상태 진입 시각이다.
+          접수와 추천 사이에 지연이 생기는 구조로 바뀌면 이 기준을 다시 봐야 한다.
           오래 방치된 순(오름차순)이 곧 처리 우선순위다.
         - intake — 접수안내(10) 전건. 매칭확률 분위는 라우트에서 자른다.
           확률 계산이 파이썬 쪽(_compute_prob)이라 SQL 로 자를 수 없고,
@@ -454,9 +460,8 @@ class JarandaReplica:
                 SELECT r.sid
                   FROM recommendation r
                  WHERE r.status = 20
-                   AND r.suggested_at > '2000-01-01'
-                   AND r.suggested_at <= DATE_SUB(NOW(), INTERVAL :stale_hours HOUR)
-                 ORDER BY r.suggested_at ASC
+                   AND r.created_at <= DATE_SUB(NOW(), INTERVAL :stale_hours HOUR)
+                 ORDER BY r.created_at ASC
                  LIMIT :limit
                 """
             )
