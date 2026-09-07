@@ -151,7 +151,14 @@ class ProbRateStore:
         return table
 
     async def replace_all(self, cells: list[dict[str, Any]], window_days: int) -> int:
-        """갱신 배치가 계산한 셀 전체를 upsert. 반환 = 기록한 행 수."""
+        """표를 이번 계산 결과로 **통째 교체**. 반환 = 기록한 행 수.
+
+        upsert 만 하면 셀 정의가 바뀐 뒤 옛 키의 행이 그대로 남는다
+        (2026-09-07 reg3·urgent 응답통합 후 죽은 행 24개가 잔류했다).
+        서빙은 cell_key 를 거치므로 잘못 읽히진 않지만, 정의를 되돌리면 낡은 값이
+        되살아나고 조회·감사 집계도 오염된다. 한 트랜잭션에서 비우고 다시 넣는다 —
+        중간에 죽으면 롤백되어 직전 표가 그대로 남는다.
+        """
         if not cells:
             return 0
         stmt = text(
@@ -168,6 +175,7 @@ class ProbRateStore:
             """
         )
         async with self._session_factory() as session:
+            await session.execute(text("DELETE FROM matching_ops_prob_rate"))
             for c in cells:
                 await session.execute(stmt, {**c, "window_days": window_days})
             await session.commit()
