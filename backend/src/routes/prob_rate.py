@@ -129,7 +129,7 @@ def _audit_text(res: dict[str, Any], fit: tuple[int, int], test: tuple[int, int]
 
 @router.post("/audit")
 async def audit(
-    body: dict[str, Any] = Body(default_factory=dict),
+    options: dict[str, Any] = Body(default_factory=dict),
     user: dict = Depends(trigger_auth),
 ) -> dict[str, Any]:
     """회귀 감시 백테스트. Cloud Scheduler 가 월 1회 호출한다.
@@ -149,6 +149,10 @@ async def audit(
     개발·검증용 수동 호출이 그대로 팀 채널에 나간다 — 실제로 2026-09-07 오차를
     잡는 동안 #1-팀-운영 에 4번 나갔다. 스케줄러만 notify=true 를 보낸다.
     """
+    # 요청 옵션은 맨 위에서 뽑는다 — 아래에서 지역변수 body(슬랙 본문)를 쓰기 때문에
+    # 요청 파라미터를 그 이름으로 두면 섀도잉된다(실제로 그래서 500 이 났다).
+    notify = bool(options.get("notify"))
+
     if not prob_rate_available():
         return {"status": "skipped", "reason": "MATCHING_OPS_DB_URL 미설정"}
 
@@ -182,7 +186,6 @@ async def audit(
     body = _audit_text(res, fit_span, test_span, breached)
 
     sent = False
-    notify = bool(body.get("notify"))
     url = settings.ab_report_webhook.strip()
     if notify and url:
         payload: dict[str, Any] = {"text": body}
